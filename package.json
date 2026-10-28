@@ -1,18 +1,18 @@
 {
   "name": "studens",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "description": "Interactive HTML lessons for Pi, Claude Code, and Codex, with passage questions and graded quizzes.",
   "type": "module",
   "license": "MIT",
   "author": "Max Miller",
-  "homepage": "https://github.com/max-miller1204/studens#readme",
+  "homepage": "https://github.com/maddoxrjohnson/studens#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/max-miller1204/studens.git"
+    "url": "git+https://github.com/maddoxrjohnson/studens.git"
   },
   "bugs": {
-    "url": "https://github.com/max-miller1204/studens/issues"
+    "url": "https://github.com/maddoxrjohnson/studens/issues"
   },
   "keywords": [
     "pi-package",
@@ -29,7 +29,7 @@
     "skills": [
       "./skills"
     ],
-    "image": "https://raw.githubusercontent.com/max-miller1204/studens/main/screenshots/answer.png"
+    "image": "https://raw.githubusercontent.com/maddoxrjohnson/studens/main/screenshots/answer.png"
   },
   "scripts": {
     "version:bump": "node scripts/versions.ts bump",

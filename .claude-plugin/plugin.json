@@ -1,13 +1,13 @@
 {
   "name": "studens",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "displayName": "Studens",
   "description": "A teacher you can interrupt: interactive HTML lessons in a local web UI, with highlight-to-ask questions and graded quizzes.",
   "author": {
     "name": "Max Miller"
   },
-  "homepage": "https://github.com/max-miller1204/studens#readme",
-  "repository": "https://github.com/max-miller1204/studens",
+  "homepage": "https://github.com/maddoxrjohnson/studens#readme",
+  "repository": "https://github.com/maddoxrjohnson/studens",
   "license": "MIT",
   "keywords": ["teaching", "learning", "classroom", "lessons", "quiz"],
   "mcpServers": {

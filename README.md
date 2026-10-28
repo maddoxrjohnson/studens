@@ -10,20 +10,20 @@ question, get answers in a saved thread, and submit quizzes for feedback.
 **Pi**
 
 ```sh
-pi install git:github.com/max-miller1204/studens@v0.12.0
+pi install git:github.com/maddoxrjohnson/studens@v0.13.0
 ```
 
 **Claude Code**
 
 ```sh
-claude plugin marketplace add max-miller1204/studens
+claude plugin marketplace add maddoxrjohnson/studens
 claude plugin install studens@studens
 ```
 
 **Codex**
 
 ```sh
-codex plugin marketplace add max-miller1204/studens
+codex plugin marketplace add maddoxrjohnson/studens
 codex plugin add studens@studens
 ```
 

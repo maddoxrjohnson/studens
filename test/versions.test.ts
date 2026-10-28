@@ -59,7 +59,7 @@ describe("release version commands", () => {
             name: "fixture",
             source: {
               source: "url",
-              url: "https://github.com/max-miller1204/studens.git",
+              url: "https://github.com/maddoxrjohnson/studens.git",
               ref: "v1.2.3",
             },
           },
@@ -67,7 +67,7 @@ describe("release version commands", () => {
       });
     fs.writeFileSync(
       path.join(root, "README.md"),
-      "pi install git:github.com/max-miller1204/studens@v1.2.3\n",
+      "pi install git:github.com/maddoxrjohnson/studens@v1.2.3\n",
     );
   });
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -155,7 +155,7 @@ describe("release version commands", () => {
   it("detects and repairs a stale Pi install pin", () => {
     fs.writeFileSync(
       path.join(root, "README.md"),
-      "pi install git:github.com/max-miller1204/studens@v9.0.0\n",
+      "pi install git:github.com/maddoxrjohnson/studens@v9.0.0\n",
     );
     expect(run("check").status).toBe(1);
     expect(run("bump", "2.0.0").status).toBe(0);

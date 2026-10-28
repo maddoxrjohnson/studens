@@ -36,7 +36,7 @@ it.each([".claude-plugin/plugin.json", ".codex-plugin/plugin.json"])(
     expect(manifest).toMatchObject({
       name: "studens",
       version: pkg["version"],
-      repository: "https://github.com/max-miller1204/studens",
+      repository: "https://github.com/maddoxrjohnson/studens",
       homepage: pkg["homepage"],
     });
     expect(pkg["name"]).toBe(manifest["name"]);
@@ -72,7 +72,7 @@ describe("Claude Code plugin", () => {
         name: manifest["name"],
         source: {
           source: "url",
-          url: "https://github.com/max-miller1204/studens.git",
+          url: "https://github.com/maddoxrjohnson/studens.git",
           ref: `v${manifest["version"]}`,
         },
       }),
@@ -112,7 +112,7 @@ describe("Codex plugin", () => {
         name: manifest["name"],
         source: {
           source: "url",
-          url: "https://github.com/max-miller1204/studens.git",
+          url: "https://github.com/maddoxrjohnson/studens.git",
           ref: `v${manifest["version"]}`,
         },
       }),

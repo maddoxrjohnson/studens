@@ -51,7 +51,7 @@ try {
     const source = entry?.source;
     if (
       source?.source !== "url" ||
-      source.url !== "https://github.com/max-miller1204/studens.git" ||
+      source.url !== "https://github.com/maddoxrjohnson/studens.git" ||
       typeof source.ref !== "string" ||
       !source.ref.startsWith("v") ||
       !semver.test(source.ref.slice(1)) ||
@@ -74,7 +74,7 @@ try {
   }
   const readmeFile = path.join(root, "README.md");
   const readme = fs.readFileSync(readmeFile, "utf8");
-  const install = /pi install git:github\.com\/max-miller1204\/studens@v([^\s`]+)/g;
+  const install = /pi install git:github\.com\/maddoxrjohnson\/studens@v([^\s`]+)/g;
   const commands = [...readme.matchAll(install)];
   if (commands.length !== 1 || !semver.test(commands[0][1]))
     throw new Error("README.md must contain one Pi install command pinned to v<version>.");
@@ -102,7 +102,7 @@ try {
       file: readmeFile,
       content: readme.replace(
         install,
-        `pi install git:github.com/max-miller1204/studens@v${version}`,
+        `pi install git:github.com/maddoxrjohnson/studens@v${version}`,
       ),
     });
     for (const { file, content } of writes) fs.writeFileSync(file, content);

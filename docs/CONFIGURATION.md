@@ -19,6 +19,27 @@ Optional, at `~/.pi/agent/classroom.json`:
 | `tailscalePort`   | `8443`  | HTTPS port for the shared persistent service tailnet route. An occupied port causes an error.          |
 | `piTailscalePort` | `8444`  | Legacy live-session Pi route port; retained for old-package cleanup. An occupied port causes an error. |
 
+### Local preferences
+
+These keys keep one learner's preferred behavior in the config file, outside the plugin
+directory, so a plugin upgrade or merge cannot silently drop it. Every default is the
+upstream behavior.
+
+| Key                          | Default | Meaning                                                                                                                                                      |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `hideAnswerReports`          | `false` | Hide the assistance and confidence dropdowns. Quiz answers default to assistance `none`. The teacher decides assistance in panel checks.                     |
+| `reviewSize`                 | `5`     | Default items per review and the daily review allowance. Whole number from 3 to 12.                                                                          |
+| `reviewSingleForm`           | `false` | Build a review as one form with one submit, not one card per question. Saved reviews keep their stored form.                                                 |
+| `syllabusPie`                | `true`  | Draw a coverage pie on the classroom page when the classroom has a `syllabus.json`. Without the file nothing is drawn and nothing fails.                     |
+| `teacherModelCatalogSeconds` | `0`     | Reuse Claude's model catalog for this many seconds (0 to 3600). `0` runs one discovery process per teacher request.                                          |
+| `teacherSessionMaxTokens`    | unset   | Start a fresh Claude teacher session once a request used more input tokens than this (20000 to 2000000). Requests carry their full context, so this is safe. |
+| `teacherRequestOverrides`    | unset   | `{"chat": {"model": "...", "effort": "low"}}`. Only `chat`, `refill`, and `reflect` can be overridden. Grading and lesson requests never are.                |
+
+A classroom that sets its own teacher model keeps it. Overrides apply to the Claude teacher only.
+
+The legacy-lesson review fixes (saved independence spaces out legacy items, and legacy lessons
+parse rubrics in the legacy format) are not settings. `test/local-preferences.test.ts` pins them.
+
 Claude Code and Codex read the same file. `/classroom`, `/teach`, and `open_classroom`
 return a link. They never open a browser. See [phone and remote links](USAGE.md#phone-and-remote-links). Lesson checks run in a separate headless
 session. The scaffold instructions name the packaged headless config.
