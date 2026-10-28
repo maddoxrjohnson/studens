@@ -312,7 +312,7 @@ export async function verifyReviewBrowser(artifacts: string | null): Promise<voi
         ${shot("graded-review")}
         await page.goto(${JSON.stringify(`${base}/c/rust`)});
         await page.getByRole('button', {name:'Start review',exact:true}).waitFor();
-        if (await page.getByRole('button', {name:'Start review',exact:true}).isDisabled() !== ${host === "service"}) throw new Error('Review availability contradicts the saved evidence.');
+        if (!await page.getByRole('button', {name:'Start review',exact:true}).isDisabled()) throw new Error('Review availability contradicts the saved evidence.');
       `);
       const grade = store.latestGrades("rust", request.lesson)[0];
       const reviewedItem = store

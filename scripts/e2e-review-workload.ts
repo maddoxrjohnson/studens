@@ -109,15 +109,31 @@ export async function verifyReviewWorkload(artifacts: string | null): Promise<vo
       throw new Error("Cap/reload changed selection or woke a teacher.");
     if (JSON.stringify(store.listGrades("rust", "001-ownership")) !== original)
       throw new Error("Workload policy mutated original grades.");
-    if (
-      store
-        .reviewItems("rust")
-        .some((i) => i.dueAt !== originalDates.find((d) => d.key === i.key)!.dueAt)
-    )
-      throw new Error("Unknown context was postponed by workload.");
+    // Matches upstream 0.12.1: a correct delayed answer extends only the selected items.
+    const selectedKeys = new Set([...first.items, ...second.items].map((item) => item.key));
+    const scheduled = store.reviewItems("rust");
+    if (selectedKeys.size !== 5 || scheduled.length !== 20)
+      throw new Error("Workload selection lost unique keys.");
+    for (const item of scheduled) {
+      const originalDue = originalDates.find((date) => date.key === item.key)!.dueAt;
+      if (selectedKeys.has(item.key)) {
+        if (item.dueAt <= Date.now() || item.dueAt <= originalDue || item.gapOpen)
+          throw new Error(`Correct delayed answer did not extend ${item.key}.`);
+        if (
+          item.context !== "unknown" ||
+          item.objective !== undefined ||
+          item.delayedSuccesses !== 0
+        )
+          throw new Error("Historical workload answer invented independent-task evidence.");
+      } else if (item.dueAt !== originalDue) {
+        throw new Error(`Workload postponed unselected item ${item.key}.`);
+      }
+    }
     const counts = reviewSessions("rust").map((r) => store.listGrades("rust", r.lesson).length);
     await server.close();
     const restarted = await server.start(0);
+    if (JSON.stringify(store.reviewItems("rust")) !== JSON.stringify(scheduled))
+      throw new Error("Restart changed completed or deferred schedules.");
     if (
       JSON.stringify(counts) !==
       JSON.stringify(reviewSessions("rust").map((r) => store.listGrades("rust", r.lesson).length))
