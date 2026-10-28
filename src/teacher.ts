@@ -2,6 +2,10 @@ import { refillOutputPlan, refillOutputSchema } from "./refill-output.ts";
 import type { RefillOutputTarget } from "./refill-output.ts";
 /** Dedicated teachers return a plan. Only the classroom service applies it. */
 import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { joinPrompt, splitPrompt } from "./prompt-split.ts";
 import { JsonObjectStream } from "./json-object-stream.ts";
 import { readConfig } from "./config.ts";
 import { cachedClaudeModels, claudeModels } from "./teacher-models.ts";
@@ -246,6 +250,7 @@ export async function runStructured(
   research = false,
   saveModelOutput?: (value: unknown) => void,
 ): Promise<unknown> {
+  if (identity.backend !== "claude") prompt = joinPrompt(prompt);
   if (identity.backend === "pi") {
     const { runPi } = await import("./pi-teacher.ts");
     return runPi(
@@ -307,7 +312,23 @@ async function runClaude(
   ];
   if (research) args.push("--allowedTools", "WebSearch", "WebFetch");
   if (identity.requestEffort) args.push("--effort", identity.requestEffort);
-  if (identity.sessionId) args.push("--resume", identity.sessionId);
+  // Fresh mode: every request carries its full context, so a resumed session only adds cost.
+  // The saved session id is neither used nor replaced, so "resume" still works afterwards.
+  const fresh = readConfig().teacherSessions === "fresh";
+  if (fresh) args.push("--no-session-persistence");
+  else if (identity.sessionId) args.push("--resume", identity.sessionId);
+  // The stable part of a cache-ordered prompt goes in a private temporary system prompt file.
+  const { stable, request } = splitPrompt(prompt);
+  let privateDir: string | undefined;
+  if (stable !== undefined) {
+    privateDir = fs.mkdtempSync(path.join(os.tmpdir(), "studens-teacher-"));
+    const file = path.join(privateDir, "context.txt");
+    fs.writeFileSync(file, stable, { mode: 0o600 });
+    args.push("--append-system-prompt-file", file);
+  }
+  const cleanup = () => {
+    if (privateDir) fs.rmSync(privateDir, { recursive: true, force: true });
+  };
   const child = spawn("claude", args, { cwd, stdio: ["pipe", "pipe", "pipe"], signal });
   let stdout = "",
     stderr = "";
@@ -320,7 +341,7 @@ async function runClaude(
   child.stdin.on("error", () => {
     child.kill();
   });
-  child.stdin.end(prompt);
+  child.stdin.end(request);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
@@ -328,10 +349,12 @@ async function runClaude(
     }, 180_000);
     child.on("error", (err) => {
       clearTimeout(timer);
+      cleanup();
       reject(err);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      cleanup();
       try {
         if (code !== 0) throw new Error(`Claude teacher exited with ${code}: ${stderr}`);
         const events = stdout
@@ -340,7 +363,7 @@ async function runClaude(
           .map((line) => JSON.parse(line));
         const result = [...events].reverse().find((event) => event.type === "result");
         if (!result) throw new Error("Claude returned no result.");
-        if (result.session_id) {
+        if (result.session_id && !fresh) {
           // Every request carries its full context, so a long session only adds cost.
           // An empty id makes the caller forget the session; the next request starts fresh.
           const limit = readConfig().teacherSessionMaxTokens;

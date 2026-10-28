@@ -21,6 +21,10 @@ export interface ClassroomConfig {
   reviewSingleForm?: boolean;
   /** Cache Claude's model catalog this many seconds (0-3600) instead of one discovery spawn per request. */
   teacherModelCatalogSeconds?: number;
+  /** "fresh" runs every Claude teacher request in a new session; the saved session is left alone. */
+  teacherSessions?: "resume" | "fresh";
+  /** "cache" puts the stable context first and the request last so the prompt cache can be reused. */
+  teacherPromptOrder?: "default" | "cache";
   /** Start a fresh Claude teacher session once a request used more than this many input tokens. */
   teacherSessionMaxTokens?: number;
   /** Model and effort for light request kinds. Grading and lesson requests are never overridden. */
@@ -106,6 +110,13 @@ export function validateConfig(config: ClassroomConfig): void {
     if (v !== undefined && (!Number.isInteger(v) || v < lo || v > hi))
       throw new Error(`${key} must be a whole number from ${lo} to ${hi}.`);
   };
+  if (config.teacherSessions !== undefined && !["resume", "fresh"].includes(config.teacherSessions))
+    throw new Error('teacherSessions must be "resume" or "fresh".');
+  if (
+    config.teacherPromptOrder !== undefined &&
+    !["default", "cache"].includes(config.teacherPromptOrder)
+  )
+    throw new Error('teacherPromptOrder must be "default" or "cache".');
   wholeIn("teacherModelCatalogSeconds", 0, 3600);
   wholeIn("teacherSessionMaxTokens", 20_000, 2_000_000);
   if (config.teacherRequestOverrides !== undefined) {

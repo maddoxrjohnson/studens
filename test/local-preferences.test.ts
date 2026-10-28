@@ -14,6 +14,7 @@ import {
   type ReviewEvent,
 } from "../src/review.ts";
 import { injectLessonRuntime } from "../src/lesson-html.ts";
+import { PROMPT_SPLIT, joinPrompt, splitPrompt } from "../src/prompt-split.ts";
 import { syllabusPie } from "../src/syllabus-pie.ts";
 import type { Classroom, Lesson } from "../src/store.ts";
 import { makeFixture, type Fixture } from "./helpers.ts";
@@ -177,5 +178,47 @@ describe("syllabus coverage pie", () => {
     expect(classroomPage(data)).toContain("cl-syllabus-pie");
     setConfig({ syllabusPie: false });
     expect(classroomPage(data)).not.toContain("cl-syllabus-pie");
+  });
+});
+
+describe("teacher prompt order", () => {
+  const context = {
+    lesson: "<p>lesson</p>",
+    lessonStage: { gatedPretests: [] },
+    privateRubric: "{}",
+    records: ["r"],
+    messages: [{ text: "hi" }],
+    classroomDocs: [],
+    topicNotes: [],
+  };
+  const build = () => dedicatedTeacherPrompt("req-1", "Learner asks X", context, [{ name: "t" }]);
+  const at = (prompt: string, marker: string) => prompt.indexOf(marker);
+  it("keeps tool definitions, then the request, then the context by default", () => {
+    const prompt = build();
+    expect(at(prompt, "Tool definitions:")).toBeLessThan(at(prompt, "Request req-1:"));
+    expect(at(prompt, "Request req-1:")).toBeLessThan(at(prompt, "Private context:"));
+  });
+  it("splits stable context from the changing request in cache order, losing nothing", () => {
+    setConfig({ teacherPromptOrder: "cache" });
+    const { stable, request } = splitPrompt(build());
+    expect(stable).toBeDefined();
+    expect(stable).toContain("You are the learner's dedicated classroom teacher.");
+    expect(stable).not.toContain("req-1");
+    expect(stable).not.toContain("Tool definitions:");
+    expect(request.trimEnd().endsWith("Learner asks X")).toBe(true);
+    expect(request).toContain("Tool definitions:");
+    const json = (text: string, label: string) =>
+      JSON.parse(text.slice(text.indexOf(label) + label.length).split("\n\n")[0]);
+    const kept = json(stable!, "Private context (rarely changes):\n");
+    const changing = json(request, "Private context (changes with each request):\n");
+    expect(Object.keys(kept)).toEqual([
+      "classroomDocs",
+      "topicNotes",
+      "records",
+      "lesson",
+      "privateRubric",
+    ]);
+    expect({ ...kept, ...changing }).toEqual(context);
+    expect(joinPrompt(build())).not.toContain(PROMPT_SPLIT);
   });
 });

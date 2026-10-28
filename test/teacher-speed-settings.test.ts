@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { validateConfig } from "../src/config.ts";
 import { requestIdentity, runStructured, type TeacherIdentity } from "../src/teacher.ts";
 import { _clearModelCatalogCache } from "../src/teacher-models.ts";
+import { PROMPT_SPLIT } from "../src/prompt-split.ts";
 import { makeFixture, type Fixture } from "./helpers.ts";
 
 let f: Fixture;
@@ -36,7 +37,9 @@ const root=process.cwd();
 const send=m=>process.stdout.write(JSON.stringify(m)+'\n');
 fs.appendFileSync(path.join(root,'rpc.jsonl'),JSON.stringify({args:process.argv.slice(2)})+'\n');
 if(!process.argv.includes('--input-format')) {
- process.stdin.resume();process.stdin.on('end',()=>{
+ let stdin='';process.stdin.on('data',c=>stdin+=c);process.stdin.on('end',()=>{
+  const a=process.argv.indexOf('--append-system-prompt-file');
+  fs.appendFileSync(path.join(root,'prompts.jsonl'),JSON.stringify({stdin,system:a>0?fs.readFileSync(process.argv[a+1],'utf8'):null,file:a>0?process.argv[a+1]:null})+'\n');
   const model=process.argv[process.argv.indexOf('--model')+1];
   send({type:'assistant',message:{model}});
   send({type:'result',session_id:'s1',usage:{input_tokens:2,cache_creation_input_tokens:Number(process.env.FAKE_TOKENS||0),cache_read_input_tokens:0},structured_output:{ok:true}});
@@ -77,6 +80,8 @@ describe("config validation", () => {
       { teacherRequestOverrides: { chat: { effort: "ultra" } } },
       { teacherRequestOverrides: { chat: { model: "a b" } } },
       { teacherRequestOverrides: { chat: { speed: 1 } } },
+      { teacherSessions: "sometimes" },
+      { teacherPromptOrder: "reverse" },
     ])
       expect(() => validateConfig(bad as never)).toThrow();
   });
@@ -145,5 +150,52 @@ describe("session rotation", () => {
     process.env.FAKE_TOKENS = "1000";
     await run({ backend: "claude" }, (id) => saved.push(id));
     expect(saved).toEqual(["s1", "", "s1"]);
+  });
+});
+
+describe("fresh sessions", () => {
+  const identity: TeacherIdentity = { backend: "claude", sessionId: "old-session" };
+  it("resumes the saved session by default", async () => {
+    const saved: string[] = [];
+    await run(identity, (id) => saved.push(id));
+    const args = requests()[0].args;
+    expect(args[args.indexOf("--resume") + 1]).toBe("old-session");
+    expect(args).not.toContain("--no-session-persistence");
+    expect(saved).toEqual(["s1"]);
+  });
+  it("starts a new session, writes no transcript, and leaves the saved session alone", async () => {
+    setConfig({ teacherSessions: "fresh" });
+    const saved: string[] = [];
+    await run(identity, (id) => saved.push(id));
+    const args = requests()[0].args;
+    expect(args).not.toContain("--resume");
+    expect(args).toContain("--no-session-persistence");
+    expect(saved).toEqual([]);
+  });
+});
+
+describe("cache-ordered prompt", () => {
+  const prompts = () =>
+    fs
+      .readFileSync(path.join(f.root, "prompts.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+  it("sends the stable part as a private system prompt file and removes it afterwards", async () => {
+    await runStructured(
+      { backend: "claude" },
+      `stable rules\n\n${PROMPT_SPLIT}\n\nRequest r1: question`,
+      f.root,
+      () => {},
+      { type: "object" },
+    );
+    const [sent] = prompts();
+    expect(sent.system).toBe("stable rules");
+    expect(sent.stdin).toBe("Request r1: question");
+    expect(fs.existsSync(sent.file)).toBe(false);
+  });
+  it("sends an unsplit prompt on stdin with no system prompt file", async () => {
+    await runStructured({ backend: "claude" }, "plain", f.root, () => {}, { type: "object" });
+    expect(prompts()[0]).toMatchObject({ stdin: "plain", system: null });
   });
 });
