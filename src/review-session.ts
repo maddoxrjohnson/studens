@@ -1,3 +1,4 @@
+import { readConfig } from "./config.ts";
 import { stateReadError } from "./state-errors.ts";
 import { invalidateActivity } from "./server/events.ts";
 /** Save browser review requests and publish only complete review documents. */
@@ -13,7 +14,7 @@ import {
 } from "./paths.ts";
 import { isContractId, parseReviewKey, questionErrors } from "../assets/runtime/quiz.mjs";
 import {
-  DEFAULT_REVIEW_SIZE,
+  defaultReviewSize,
   findReviewItem,
   isDue,
   MAX_REVIEW_SIZE,
@@ -153,7 +154,7 @@ export function startReview(
   classroom: string,
   id: string,
   owner: ReviewOwner,
-  limit = DEFAULT_REVIEW_SIZE,
+  limit = defaultReviewSize(),
   options: { topic?: string; early?: boolean } = {},
 ): { session: ReviewSession; added: boolean } {
   return withReviewEdit(() => startReviewLocked(classroom, id, owner, limit, options));
@@ -190,7 +191,7 @@ export function planReview(
   classroom: string,
   id: string,
   owner: ReviewOwner,
-  limit = DEFAULT_REVIEW_SIZE,
+  limit = defaultReviewSize(),
   options: {
     topic?: string;
     early?: boolean;
@@ -280,7 +281,7 @@ export function planReview(
       );
   if (variants.every((variant) => variant.rubric.criteria?.length)) session.criterionContract = 1;
   session.variants = Object.fromEntries(picked.map((item, i) => [item.key, variants[i].id]));
-  session.document = assembleReview(picked, variants, true);
+  session.document = assembleReview(picked, variants, !readConfig().reviewSingleForm);
   validateReview(session, session.document);
   return session;
 }

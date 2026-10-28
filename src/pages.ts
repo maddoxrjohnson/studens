@@ -14,9 +14,11 @@ import { uiFontHead } from "./ui-assets.ts";
 import { escapeHtml, renderMarkdown } from "./markdown.ts";
 import { lessonUrl } from "./paths.ts";
 import { memoryMapItems, memoryMapSection, memoryTime } from "./memory-map.ts";
+import { readConfig } from "./config.ts";
+import { syllabusPie } from "./syllabus-pie.ts";
 import { missionSummary, renderMission } from "./mission-map.ts";
 import {
-  DEFAULT_REVIEW_SIZE,
+  defaultReviewSize,
   MAX_REVIEW_SIZE,
   reviewTopic,
   type ReviewItem,
@@ -207,6 +209,7 @@ ${lessons.map((lesson, i) => lessonRow(lesson, i, data.progress.dueByLesson[less
   ${classroom.mission ? `<p class="cl-lede">${escapeHtml(missionWhy(classroom.mission) ?? "")}</p>` : ""}
 </div>
 ${upNext(data)}
+${readConfig().syllabusPie === false ? "" : syllabusPie(classroom.name, data.lessons, data.progress.items ?? [])}
 <div class="cl-classroom-columns">
 <section class="cl-section" aria-label="Lessons"><h2 class="cl-section-title">Lessons</h2>${lessonList}</section>
 ${memoryMapSection(classroom.name, data.progress.items ?? [], data.progress.now)}
@@ -305,7 +308,7 @@ function progressSection(data: ClassroomPageData): string {
   ${(data.progress.reteach ?? []).map((item) => `<p class="cl-progress-note">Review paused after repeated misses: ${escapeHtml(item.prompt)} <a href="/c/${escapeHtml(data.classroom.name)}/${escapeHtml(item.lesson)}#cl-reteach">Open short re-teach</a></p>`).join("")}
   ${
     review.total > 0
-      ? `<div id="cl-review" class="cl-review-start" data-cl-review="${escapeHtml(data.classroom.name)}" data-due="${review.due}" data-review-size="${DEFAULT_REVIEW_SIZE}">
+      ? `<div id="cl-review" class="cl-review-start" data-cl-review="${escapeHtml(data.classroom.name)}" data-due="${review.due}" data-review-size="${defaultReviewSize()}">
     <div class="cl-review-options">
     <label>Review size<select data-cl-review-size>${Array.from(
       { length: MAX_REVIEW_SIZE - 2 },
@@ -313,7 +316,7 @@ function progressSection(data: ClassroomPageData): string {
     )
       .map(
         (size) =>
-          `<option value="${size}"${size === DEFAULT_REVIEW_SIZE ? " selected" : ""}>${size === 3 ? "Quick 3" : `${size} items`}</option>`,
+          `<option value="${size}"${size === defaultReviewSize() ? " selected" : ""}>${size === 3 ? "Quick 3" : `${size} items`}</option>`,
       )
       .join("")}</select></label>
     <label>Topic<select data-cl-review-topic><option value="">All topics in this classroom</option>${[

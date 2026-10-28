@@ -5,6 +5,7 @@ import {
   type EvidenceContext,
   type PerformanceEvidence,
 } from "./evidence.ts";
+import { readConfig } from "./config.ts";
 import { objectiveReviewKey, reviewKey } from "../assets/runtime/quiz.mjs";
 import { initialMemory, recallMemory, incompleteMemory, MEMORY_POLICY } from "./review-memory.ts";
 import type { Objective } from "./teaching-plan.ts";
@@ -16,6 +17,10 @@ export const RETENTION_SUCCESSES = 2;
 export const RETEACH_MISSES = 3;
 
 export const DEFAULT_REVIEW_SIZE = 5;
+/** Items per review: the local `reviewSize` setting, else the upstream default. */
+export function defaultReviewSize(): number {
+  return readConfig().reviewSize ?? DEFAULT_REVIEW_SIZE;
+}
 export const MAX_REVIEW_SIZE = 12;
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
@@ -250,7 +255,7 @@ export function scheduleItems(events: ReviewEvent[]): ReviewItem[] {
       elapsedDays = elapsed / DAY_MS;
       context = evidenceContext(event.evidence, elapsed);
       const full = event.correct && (event.credit === undefined || event.credit === 1);
-      const independentFull = full && independent(event.evidence);
+      const independentFull = full && (event.gapIndependent ?? independent(event.evidence));
       if (!full) gapOpen = true;
       else if (event.gapIndependent ?? independent(event.evidence)) gapOpen = false;
       const feedbackAt = Math.max(event.at, event.feedbackAt ?? event.at);

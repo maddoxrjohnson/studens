@@ -272,14 +272,17 @@ export function createQuizzes({ config, drafts, placeTeacherPanel }) {
       label.append(select);
       question.append(label);
     };
-    if (form.dataset.evidence === "report")
+    if (form.dataset.evidence === "report" && !config.hideAnswerReports)
       addReport("clAssistance", "How did you answer?", [
         ["", "Not reported"],
         ["none", "Without help"],
         ["hint", "With a hint or reference"],
         ["solution", "After seeing a solution"],
       ]);
-    if (question.dataset.confidence === "optional" || form.dataset.confidence === "optional")
+    if (
+      !config.hideAnswerReports &&
+      (question.dataset.confidence === "optional" || form.dataset.confidence === "optional")
+    )
       addReport("clConfidence", "Confidence (optional)", [
         ["", "Not reported"],
         ["guess", "Guess"],

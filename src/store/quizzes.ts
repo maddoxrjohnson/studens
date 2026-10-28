@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { readConfig } from "../config.ts";
 import { gradeClosed } from "../closed-grading.ts";
 import { validateCodeQuestions, bindCodeAnswers } from "../code-questions.ts";
 import { sameCodeJson } from "../../assets/runtime/code.mjs";
@@ -114,7 +115,7 @@ export function createSubmission(
         objective: original?.objective ?? teachingPlan.objectives[q.objective],
         task: q.task,
         support: q.support,
-        assistance: answer.assistance ?? "unknown",
+        assistance: answer.assistance ?? (readConfig().hideAnswerReports ? "none" : "unknown"),
       },
     };
   });

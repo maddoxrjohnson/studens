@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
+import { readConfig } from "./config.ts";
 import { allocateCriteria, type CriterionAllocation } from "./criteria.ts";
 import { ASSISTANCE, type Assistance } from "./evidence.ts";
 import { applyAnswer, applyGrade } from "./bridge.ts";
@@ -27,7 +28,7 @@ import {
   missionStub,
   notesStub,
   PRETEST_FOLLOW_UP,
-  QUIZ_FOLLOW_UP,
+  quizFollowUp,
 } from "./prompts.ts";
 import { authoredQuestions } from "./quiz-authoring.ts";
 import { parseTeachingPlan } from "./teaching-plan.ts";
@@ -39,7 +40,7 @@ import { answersByQuestion, kindOf } from "./quiz.ts";
 import {
   answerReviewKey,
   findReviewItem,
-  DEFAULT_REVIEW_SIZE,
+  defaultReviewSize,
   MAX_REVIEW_SIZE,
   relativeDay,
 } from "./review.ts";
@@ -203,8 +204,9 @@ export function classroomTools(host: ToolHost): ClassroomTool[] {
           assistance: {
             type: "string",
             enum: ASSISTANCE,
-            description:
-              "Learner-reported assistance. Use unknown unless the learner states how they answered.",
+            description: readConfig().hideAnswerReports
+              ? "Assistance, decided by the teacher from the panel conversation: none if the learner answered before any hint from you, hint if you nudged them, solution if you supplied the answer."
+              : "Learner-reported assistance. Use unknown unless the learner states how they answered.",
           },
           task: {
             type: "string",
@@ -508,7 +510,7 @@ export function classroomTools(host: ToolHost): ClassroomTool[] {
         } else {
           notes.push(
             incorrectQuestionIds.length > 0
-              ? `Missed questions: ${incorrectQuestionIds.join(", ")}.\n\n${QUIZ_FOLLOW_UP}`
+              ? `Missed questions: ${incorrectQuestionIds.join(", ")}.\n\n${quizFollowUp()}`
               : "Every answer is correct. Ask in the teacher panel whether the learner is ready to continue before starting the next lesson.",
           );
           notes.push(reviewScheduleLine(submission));
@@ -677,7 +679,7 @@ export function classroomTools(host: ToolHost): ClassroomTool[] {
           classroom: str("Classroom directory name."),
           limit: {
             type: "number",
-            description: `How many due questions to include. Default ${DEFAULT_REVIEW_SIZE}, maximum ${MAX_REVIEW_SIZE}.`,
+            description: `How many due questions to include. Default ${defaultReviewSize()}, maximum ${MAX_REVIEW_SIZE}.`,
           },
         },
         ["limit"],
@@ -686,7 +688,7 @@ export function classroomTools(host: ToolHost): ClassroomTool[] {
         if (!isValidSlug(params.classroom) || !fs.existsSync(classroomDir(params.classroom))) {
           return fail(`No such classroom: ${params.classroom}.`);
         }
-        const limit = params.limit ?? DEFAULT_REVIEW_SIZE;
+        const limit = params.limit ?? defaultReviewSize();
         if (!Number.isInteger(limit) || limit < 1 || limit > MAX_REVIEW_SIZE) {
           return fail(`limit must be a whole number from 1 to ${MAX_REVIEW_SIZE}.`);
         }

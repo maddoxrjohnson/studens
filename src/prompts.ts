@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { readConfig } from "./config.ts";
 import { assetsDir, classroomDir, docsDir, lessonDir, templatesDir } from "./paths.ts";
 import { answerDetail, answersByQuestion, kindOf } from "./quiz.ts";
 import { readLesson, lessonReviewItems } from "./store.ts";
@@ -91,6 +92,15 @@ export const PANEL_REPLY =
 /** The same quiz follow-up rule applies to every host. */
 export const QUIZ_FOLLOW_UP =
   "If any answer is wrong, stay on this lesson. Explain the missed idea briefly, then ask one new retrieval question about that idea in the lesson's teacher panel. Separate the explanation of the submitted mistake from the new task. The new task must require a fresh decision or inference: change a causal condition, contrast two cases, or ask the learner to diagnose a new error. Merely renaming a variable or asking the original question again is not a new task. Do not state the answer to the new task in its setup, heading, or an adjacent sentence. Before returning, solve the new task privately and check that copying a sentence from your explanation cannot answer it. Keep the graded browser quiz locked. Do not ask for an immediate retake. Review the idea later through spaced review. Do not give its answer yet. End your turn and wait for the learner's panel reply. Check their reply and repeat with one question at a time until they demonstrate understanding. Do not create or start the next lesson during this check. If the learner asks to skip the check, record the unresolved gap in notes. A wrong answer alone is not evidence of learning. Write a learning record only after they demonstrate understanding. Then call record_retrieval_check with the original review key, the active learning record file name, their actual panel reply, and the evidence. Ask them to report assistance. Use assistance unknown unless they state how they answered. Record task transfer only for a fresh unfamiliar application. Immediate correction does not establish retained knowledge. Do not change the quiz score. If every answer is correct, ask in the panel whether they are ready to continue before starting the next lesson.";
+
+/** Local preference `hideAnswerReports`: the teacher, not the learner, decides assistance. */
+const QUIZ_FOLLOW_UP_TEACHER_ASSISTANCE =
+  "If any answer is wrong, stay on this lesson. Explain the missed idea briefly, then ask one new retrieval question about that idea in the lesson's teacher panel. Separate the explanation of the submitted mistake from the new task. The new task must require a fresh decision or inference: change a causal condition, contrast two cases, or ask the learner to diagnose a new error. Merely renaming a variable or asking the original question again is not a new task. Do not state the answer to the new task in its setup, heading, or an adjacent sentence. Before returning, solve the new task privately and check that copying a sentence from your explanation cannot answer it. Keep the graded browser quiz locked. Do not ask for an immediate retake. Review the idea later through spaced review. Do not give its answer yet. End your turn and wait for the learner's panel reply. Check their reply and repeat with one question at a time until they demonstrate understanding. Do not create or start the next lesson during this check. If the learner asks to skip the check, record the unresolved gap in notes. A wrong answer alone is not evidence of learning. Write a learning record only after they demonstrate understanding. Then call record_retrieval_check with the original review key, the active learning record file name, their actual panel reply, and the evidence. Decide assistance yourself from the panel conversation: none if the learner answered the new question before you gave any hint, nudge, or partial answer for it; hint if you nudged them toward it; solution if you supplied the answer. Do not ask the learner to report it. Record task transfer only for a fresh unfamiliar application. Immediate correction does not establish retained knowledge. Do not change the quiz score. If every answer is correct, ask in the panel whether they are ready to continue before starting the next lesson.";
+
+/** The follow-up for the configured assistance policy. */
+export function quizFollowUp(): string {
+  return readConfig().hideAnswerReports ? QUIZ_FOLLOW_UP_TEACHER_ASSISTANCE : QUIZ_FOLLOW_UP;
+}
 
 /** What to do after grading a pretest. Wrong answers are expected before teaching. */
 export const PRETEST_FOLLOW_UP =
@@ -254,7 +264,7 @@ export function teachingPrompt(
     `The templates are in the extension's \`assets/templates/\` directory (${templatesDir()}). The quiz contract is ${path.join(templatesDir(), "quiz.html")}.`,
   );
   parts.push(
-    `## After grading\n\nFor a pretest:\n${PRETEST_FOLLOW_UP}\n\nFor a check or review:\n${QUIZ_FOLLOW_UP}`,
+    `## After grading\n\nFor a pretest:\n${PRETEST_FOLLOW_UP}\n\nFor a check or review:\n${quizFollowUp()}`,
   );
   parts.push(
     "Reference documents you can read when you need them, in the extension's `docs/` directory " +
@@ -450,7 +460,7 @@ export function gradePrompt(
       ? `Return one \`grade_quiz_answers\` call with \`submission_id: "${submission.id}"\`, short \`feedback_markdown\` covering the quiz, and one \`questions\` entry for every question id above. Set \`correct\` to true only for full credit. For partial credit or weighted questions, supply \`points_earned\` and \`points_possible\` for every question. Omit score. The service calculates the total from those allocations. With no points, answers use equal-weight binary grading.`
       : `Then call \`grade_lesson_quiz\` with \`submission_id: "${submission.id}"\`, a \`score\` out of 100, short \`feedback_markdown\` covering the whole quiz, and a \`questions\` entry for every question id above. Set \`correct\` to true only for full credit. For partial credit or weighted questions, supply \`points_earned\` and \`points_possible\` for every question. The score must equal 100 times total earned points divided by total possible points. Integer rounding is allowed. With no points, answers use equal-weight binary grading. That is what renders the grade on their page.`,
     "",
-    kind === "pretest" ? PRETEST_FOLLOW_UP : QUIZ_FOLLOW_UP,
+    kind === "pretest" ? PRETEST_FOLLOW_UP : quizFollowUp(),
     ...(delivery === "service" && kind !== "pretest"
       ? [
           "Put the complete corrective retrieval question in the top-level message field: that field is the teacher panel. feedback_markdown and questions[].feedback belong to the locked graded quiz. The panel message must contain the question itself so the learner can answer there.",

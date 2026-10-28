@@ -1,7 +1,7 @@
 /** Workload policy only: reservations never change memory, grades, or due dates. */
 import {
   DAY_MS,
-  DEFAULT_REVIEW_SIZE,
+  defaultReviewSize,
   MAX_REVIEW_SIZE,
   isDue,
   findReviewItem,
@@ -55,7 +55,7 @@ export function workload(
   const completedYesterday = [...firstCompletions.values()].filter(
     (at) => at >= day - DAY_MS && at < day,
   ).length;
-  const allowance = Math.min(MAX_REVIEW_SIZE, DEFAULT_REVIEW_SIZE + completedYesterday);
+  const allowance = Math.min(MAX_REVIEW_SIZE, defaultReviewSize() + completedYesterday);
   const reservedKeys = [
     ...new Set(
       reservations

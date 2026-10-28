@@ -8,6 +8,14 @@ export interface ClassroomConfig {
   tailscale?: boolean;
   tailscalePort?: number;
   piTailscalePort?: number;
+  /** Local preference: hide the assistance and confidence reports; the teacher decides assistance. */
+  hideAnswerReports?: boolean;
+  /** Local preference: due items per review. Whole number from 3 to 12; upstream default is 5. */
+  reviewSize?: number;
+  /** Local preference: build a review as one form with one submit, not one card per question. */
+  reviewSingleForm?: boolean;
+  /** Draw the syllabus coverage pie when a classroom has a syllabus.json. On unless false. */
+  syllabusPie?: boolean;
 }
 
 let testConfigPath: string | undefined;
@@ -70,6 +78,14 @@ export function validateConfig(config: ClassroomConfig): void {
   resolveConfiguredPort(config.port);
   if (config.tailscale !== undefined && typeof config.tailscale !== "boolean")
     throw new Error("tailscale must be a boolean.");
+  for (const key of ["hideAnswerReports", "reviewSingleForm", "syllabusPie"] as const)
+    if (config[key] !== undefined && typeof config[key] !== "boolean")
+      throw new Error(`${key} must be a boolean.`);
+  if (
+    config.reviewSize !== undefined &&
+    (!Number.isInteger(config.reviewSize) || config.reviewSize < 3 || config.reviewSize > 12)
+  )
+    throw new Error("reviewSize must be a whole number from 3 to 12.");
   for (const key of ["tailscalePort", "piTailscalePort"] as const) {
     if (config[key] !== undefined) {
       try {

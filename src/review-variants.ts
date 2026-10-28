@@ -90,7 +90,7 @@ export function authoredVariants(
   html: string,
   required = false,
 ): Map<string, PreparedVariant[]> {
-  const key = parseRubric(keyText, html);
+  const key = parseRubric(keyText, html, required ? "machine" : "legacy");
   const plan = parseTeachingPlan(planText, html);
   const pools = new Map<string, PreparedVariant[]>();
   for (const quiz of authoredQuizzes(html)) {

@@ -8,6 +8,7 @@ import { appearanceHead } from "./appearance.ts";
  * without being rewritten.
  */
 
+import { readConfig } from "./config.ts";
 import { toScriptJson } from "./markdown.ts";
 import { uiFontHead } from "./ui-assets.ts";
 
@@ -20,6 +21,8 @@ export interface LessonRuntimeConfig {
   delivery?: "push" | "wait" | "service";
   pendingPretests?: string[];
   reviewScreen?: boolean;
+  /** Local preference: the page omits the assistance and confidence reports. */
+  hideAnswerReports?: boolean;
   prerequisites?: { title: string; url: string }[];
   prerequisiteError?: string;
 }
@@ -58,6 +61,7 @@ function insertBeforeBodyEnd(html: string, snippet: string): string {
  * served page back to disk) is returned unchanged rather than double-wired.
  */
 export function injectLessonRuntime(html: string, config: LessonRuntimeConfig): string {
+  if (readConfig().hideAnswerReports) config = { ...config, hideAnswerReports: true };
   if (html.includes('id="cl-config"')) {
     if (!html.includes('href="/static/ui-fonts.css"')) html = insertInHead(html, uiFontHead());
     return html.replace(

@@ -4131,3 +4131,53 @@ time[data-exact-time]:focus::after {
     border-color: ButtonText;
   }
 }
+
+/* Syllabus coverage pie (src/syllabus-pie.ts). */
+.cl-pie-row {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+.cl-pie {
+  width: 7.5rem;
+  height: 7.5rem;
+  flex: none;
+}
+.cl-pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.cl-pie-swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+  margin-right: 0.45rem;
+  vertical-align: -0.05rem;
+}
+.cl-pie-count {
+  color: var(--cl-text-muted);
+  font-size: 0.9em;
+}
+circle.cl-pie-mastered {
+  stroke: var(--cl-success);
+}
+circle.cl-pie-seen {
+  stroke: var(--cl-accent);
+}
+circle.cl-pie-unseen {
+  stroke: var(--cl-border-strong);
+}
+span.cl-pie-mastered {
+  background: var(--cl-success);
+}
+span.cl-pie-seen {
+  background: var(--cl-accent);
+}
+span.cl-pie-unseen {
+  background: var(--cl-border-strong);
+}

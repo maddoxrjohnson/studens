@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { classroomDir, isValidSlug, lessonDir } from "./paths.ts";
 import { answerReviewKey, findReviewItem } from "./review.ts";
-import { QUIZ_FOLLOW_UP } from "./prompts.ts";
+import { quizFollowUp } from "./prompts.ts";
 import * as server from "./server.ts";
 import * as store from "./store.ts";
 import { kindOf } from "./quiz.ts";
@@ -80,7 +80,7 @@ export function prepareResume(input: ResumeInput): ResumeRequest {
         : "Saved retrieval checks after this grade resolve each missed item. Explain that and ask whether the learner is ready to continue.",
       "This is a handoff, not a learner answer. Do not grade again, write a learning record, record a retrieval check, change notes, or start a new lesson. Preserve all assessments and evidence.",
       "Write your final message to the learner in the teacher panel. Keep learner replies there.",
-      QUIZ_FOLLOW_UP,
+      quizFollowUp(),
       `Saved submission: ${JSON.stringify(submission)}`,
       `Saved grade: ${JSON.stringify(latest.grade)}`,
       `Review items: ${JSON.stringify(items)}`,
