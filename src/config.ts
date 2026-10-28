@@ -3,6 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+export const OVERRIDABLE_KINDS = ["chat", "refill", "reflect"] as const;
+export type OverridableKind = (typeof OVERRIDABLE_KINDS)[number];
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type Effort = (typeof EFFORTS)[number];
+
 export interface ClassroomConfig {
   port?: number;
   tailscale?: boolean;
@@ -14,6 +19,12 @@ export interface ClassroomConfig {
   reviewSize?: number;
   /** Local preference: build a review as one form with one submit, not one card per question. */
   reviewSingleForm?: boolean;
+  /** Cache Claude's model catalog this many seconds (0-3600) instead of one discovery spawn per request. */
+  teacherModelCatalogSeconds?: number;
+  /** Start a fresh Claude teacher session once a request used more than this many input tokens. */
+  teacherSessionMaxTokens?: number;
+  /** Model and effort for light request kinds. Grading and lesson requests are never overridden. */
+  teacherRequestOverrides?: Partial<Record<OverridableKind, { model?: string; effort?: Effort }>>;
   /** Draw the syllabus coverage pie when a classroom has a syllabus.json. On unless false. */
   syllabusPie?: boolean;
 }
@@ -86,6 +97,45 @@ export function validateConfig(config: ClassroomConfig): void {
     (!Number.isInteger(config.reviewSize) || config.reviewSize < 3 || config.reviewSize > 12)
   )
     throw new Error("reviewSize must be a whole number from 3 to 12.");
+  const wholeIn = (
+    key: "teacherModelCatalogSeconds" | "teacherSessionMaxTokens",
+    lo: number,
+    hi: number,
+  ) => {
+    const v = config[key];
+    if (v !== undefined && (!Number.isInteger(v) || v < lo || v > hi))
+      throw new Error(`${key} must be a whole number from ${lo} to ${hi}.`);
+  };
+  wholeIn("teacherModelCatalogSeconds", 0, 3600);
+  wholeIn("teacherSessionMaxTokens", 20_000, 2_000_000);
+  if (config.teacherRequestOverrides !== undefined) {
+    const overrides = config.teacherRequestOverrides as Record<string, unknown>;
+    if (!overrides || typeof overrides !== "object" || Array.isArray(overrides))
+      throw new Error("teacherRequestOverrides must be an object.");
+    for (const [kind, value] of Object.entries(overrides)) {
+      if (!(OVERRIDABLE_KINDS as readonly string[]).includes(kind))
+        throw new Error(
+          `teacherRequestOverrides.${kind} is not allowed. Only ${OVERRIDABLE_KINDS.join(", ")} can be overridden; grading and lesson requests always use the classroom's model.`,
+        );
+      const o = value as { model?: unknown; effort?: unknown };
+      if (!o || typeof o !== "object" || Array.isArray(o))
+        throw new Error(`teacherRequestOverrides.${kind} must be an object.`);
+      for (const key of Object.keys(o))
+        if (key !== "model" && key !== "effort")
+          throw new Error(`teacherRequestOverrides.${kind}.${key} is not a known option.`);
+      if (
+        o.model !== undefined &&
+        (typeof o.model !== "string" || !o.model.trim() || /\s/.test(o.model))
+      )
+        throw new Error(
+          `teacherRequestOverrides.${kind}.model must be a model ID without whitespace.`,
+        );
+      if (o.effort !== undefined && !(EFFORTS as readonly string[]).includes(o.effort as string))
+        throw new Error(
+          `teacherRequestOverrides.${kind}.effort must be one of ${EFFORTS.join(", ")}.`,
+        );
+    }
+  }
   for (const key of ["tailscalePort", "piTailscalePort"] as const) {
     if (config[key] !== undefined) {
       try {

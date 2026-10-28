@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readConfig, validateConfig } from "../src/config.ts";
 import { classroomPage } from "../src/pages.ts";
-import { QUIZ_FOLLOW_UP, quizFollowUp } from "../src/prompts.ts";
+import { QUIZ_FOLLOW_UP, dedicatedTeacherPrompt, quizFollowUp } from "../src/prompts.ts";
 import {
   DAY_MS,
   DEFAULT_REVIEW_SIZE,
@@ -49,6 +49,13 @@ describe("local preference settings", () => {
     expect(injectLessonRuntime("<html><head></head><body></body></html>", base)).not.toContain(
       "hideAnswerReports",
     );
+  });
+  it("keeps the dedicated teacher prompt consistent with the assistance policy", () => {
+    const prompt = () => dedicatedTeacherPrompt("r", "request", {}, []);
+    expect(prompt()).toContain("Use assistance unknown unless the learner states");
+    setConfig({ hideAnswerReports: true });
+    expect(prompt()).not.toContain("Use assistance unknown unless the learner states");
+    expect(prompt()).toContain("Decide assistance yourself");
   });
   it("uses reviewSize as the default review size", () => {
     setConfig({ reviewSize: 10 });

@@ -3,7 +3,8 @@ import type { RefillOutputTarget } from "./refill-output.ts";
 /** Dedicated teachers return a plan. Only the classroom service applies it. */
 import { spawn } from "node:child_process";
 import { JsonObjectStream } from "./json-object-stream.ts";
-import { claudeModels } from "./teacher-models.ts";
+import { readConfig } from "./config.ts";
+import { cachedClaudeModels, claudeModels } from "./teacher-models.ts";
 import type { ModelCatalog, ModelChoice } from "./teacher-models.ts";
 import { TeacherDeadline } from "./teacher-deadline.ts";
 import { LESSON_OUTPUT_SCHEMA, lessonModelPlan } from "./lesson-output.ts";
@@ -40,6 +41,8 @@ export interface TeacherIdentity {
   backend: Backend;
   sessionId?: string;
   requestedModel?: string | null;
+  /** Transient per-request effort from `teacherRequestOverrides`; never saved. */
+  requestEffort?: string;
   selectionRevision?: number;
   activeModel?: string;
   activeRequestedModel?: string | null;
@@ -282,7 +285,7 @@ async function runClaude(
   saveActiveModel?: (model: string) => void,
   research = false,
 ): Promise<unknown> {
-  const catalog = await claudeModels(cwd);
+  const catalog = await cachedClaudeModels(cwd);
   const model = identity.requestedModel ?? catalog.configuredModel;
   const expectedModel = catalog.models.find((m) => m.id === model)?.resolvedModel ?? model;
   const args = [
@@ -303,6 +306,7 @@ async function runClaude(
     "dontAsk",
   ];
   if (research) args.push("--allowedTools", "WebSearch", "WebFetch");
+  if (identity.requestEffort) args.push("--effort", identity.requestEffort);
   if (identity.sessionId) args.push("--resume", identity.sessionId);
   const child = spawn("claude", args, { cwd, stdio: ["pipe", "pipe", "pipe"], signal });
   let stdout = "",
@@ -336,7 +340,17 @@ async function runClaude(
           .map((line) => JSON.parse(line));
         const result = [...events].reverse().find((event) => event.type === "result");
         if (!result) throw new Error("Claude returned no result.");
-        if (result.session_id) save(result.session_id);
+        if (result.session_id) {
+          // Every request carries its full context, so a long session only adds cost.
+          // An empty id makes the caller forget the session; the next request starts fresh.
+          const limit = readConfig().teacherSessionMaxTokens;
+          const u = result.usage ?? {};
+          const used =
+            (u.input_tokens ?? 0) +
+            (u.cache_creation_input_tokens ?? 0) +
+            (u.cache_read_input_tokens ?? 0);
+          save(limit !== undefined && used > limit ? "" : result.session_id);
+        }
         if (result.is_error)
           throw new Error(
             `Claude teacher failed: ${result.result ?? JSON.stringify(result.errors)}`,
@@ -630,4 +644,26 @@ export async function teacherModels(backend: Backend, cwd: string): Promise<Mode
         undefined,
         true,
       )) as ModelCatalog);
+}
+
+/**
+ * The identity a request runs under. A local `teacherRequestOverrides` entry for a light
+ * request kind picks its model and effort unless the classroom chose a model itself.
+ */
+export function requestIdentity(
+  identity: TeacherIdentity,
+  request: { kind: string; requestedModel?: string | null },
+): TeacherIdentity {
+  const base = { ...identity, requestedModel: request.requestedModel };
+  if (identity.backend !== "claude") return base;
+  const override = (
+    readConfig().teacherRequestOverrides as
+      Record<string, { model?: string; effort?: string } | undefined> | undefined
+  )?.[request.kind];
+  if (!override) return base;
+  return {
+    ...base,
+    requestedModel: request.requestedModel ?? override.model ?? null,
+    requestEffort: override.effort,
+  };
 }

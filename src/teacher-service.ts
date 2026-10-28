@@ -5,6 +5,7 @@ import {
   pendingOwnershipTransaction,
 } from "./teacher-ownership.ts";
 import type { OwnershipChange } from "./teacher-ownership.ts";
+import { requestIdentity } from "./teacher.ts";
 import type { TeacherIdentity } from "./teacher.ts";
 import {
   RESOLVE_DISPUTE,
@@ -219,7 +220,8 @@ export class TeacherService {
               "Readiness check only. Confirm that this dedicated teacher can run. Return an empty calls array, a brief readiness message, null learning_record and empty notes_markdown. Do not answer learner work, grade, research, publish or write evidence. Saved classroom evidence will be supplied with each later request.",
               classroomDir(name),
               (id) => {
-                candidate.sessionId = id;
+                if (id) candidate.sessionId = id;
+                else delete candidate.sessionId;
                 saveOwnershipTransaction({ version: 1, decision: "prepared", changes });
               },
               controller.signal,
@@ -1065,12 +1067,16 @@ export class TeacherService {
           let plan;
           try {
             plan = await this.run(
-              { ...state.identity, requestedModel: r.requestedModel },
+              requestIdentity(state.identity, r),
               this.prompt(r, state),
               classroomDir(classroom),
               (id) => {
-                state.identity.sessionId = id;
-                if (r.originatingIdentity) r.originatingIdentity.sessionId = id;
+                if (id) state.identity.sessionId = id;
+                else delete state.identity.sessionId;
+                if (r.originatingIdentity) {
+                  if (id) r.originatingIdentity.sessionId = id;
+                  else delete r.originatingIdentity.sessionId;
+                }
                 saveTeacherState(classroom, state);
               },
               controller.signal,

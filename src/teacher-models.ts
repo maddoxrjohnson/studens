@@ -1,5 +1,6 @@
 /** Read Claude's installed model catalog and effective settings without an inference turn. */
 import { spawn } from "node:child_process";
+import { readConfig } from "./config.ts";
 import { JsonObjectStream } from "./json-object-stream.ts";
 
 export interface ModelChoice {
@@ -24,6 +25,20 @@ export function modelSelection(value: unknown): string | null {
       "Model ID must contain 1 to 200 characters without whitespace or control characters, or be null for the configured default.",
     );
   return value;
+}
+
+const catalogCache = new Map<string, { at: number; catalog: ModelCatalog }>();
+/** `claudeModels` reused for `teacherModelCatalogSeconds`; failures are never cached. */
+export async function cachedClaudeModels(cwd: string): Promise<ModelCatalog> {
+  const ttl = (readConfig().teacherModelCatalogSeconds ?? 0) * 1000;
+  const hit = catalogCache.get(cwd);
+  if (ttl > 0 && hit && Date.now() - hit.at < ttl) return hit.catalog;
+  const catalog = await claudeModels(cwd);
+  if (ttl > 0) catalogCache.set(cwd, { at: Date.now(), catalog });
+  return catalog;
+}
+export function _clearModelCatalogCache(): void {
+  catalogCache.clear();
 }
 
 export async function claudeModels(cwd: string): Promise<ModelCatalog> {

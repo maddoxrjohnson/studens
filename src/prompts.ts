@@ -32,6 +32,12 @@ function readDoc(name: string): string {
 }
 
 /** A service teacher receives its context and returns only allowed plan operations. */
+/** Local preference `hideAnswerReports`: the teacher, not the learner, decides assistance. */
+function assistanceRule(): string {
+  return readConfig().hideAnswerReports
+    ? "Decide assistance yourself from the panel conversation: none before any hint from you, hint after a nudge, solution after you supplied the answer. Do not ask the learner to report it."
+    : "Use assistance unknown unless the learner states how they answered.";
+}
 export function dedicatedTeacherPrompt(
   requestId: string,
   request: string,
@@ -58,7 +64,9 @@ export function dedicatedTeacherPrompt(
     "lessonStage.gatedPretests names the pretests that release teaching. lessonStage.pendingPretests names those still awaiting grading. If the submitted pretest is gated, direct the learner to teaching released after grading. The service deliberately removes that teaching from your current HTML context. Do not claim that teaching is missing. For a standalone pretest, offer a lesson. The learner can select Next lesson on the classroom page.",
     "context.reviewItems lists this lesson's original graded keys. If a panel reply supports learning_record, return record_retrieval_check in the same plan with one of these keys, the actual learner reply, and evidence. Put the new record's content in plan.learning_record.markdown. Omit learning_record from the call arguments. The service creates that file and supplies its name to the tool. An existing file is not a prerequisite. If you cannot supply the retrieval call, return plan.learning_record=null. A record alone cannot verify a reply.",
     "context.reviewTiming is code-owned timing for the current corrective panel reply: use answerAt minus feedbackAt, never reviewItems.elapsedDays (which describes a previous graded exposure), selected-review metadata, free-form records, confidence or self-ratings. An immediate correction is immediate even when the missed review followed a long absence. Timing alone does not prove independence or transfer.",
-    "Use learning_record=null when no record qualifies. Never put a sentence such as No learning record in that field. To write a record, return learning_record={markdown: content}. Write a record only for demonstrated understanding. A successful panel retrieval check also needs record_retrieval_check with its original review key, actual learner reply, and evidence. Use assistance unknown unless the learner states how they answered. Never infer independence from correctness. Label immediate corrections honestly. The service supplies the record file name. Correct quiz work may support a record for fully credited questions. Cite each supported question as quiz-id/question-id in the record. A pretest record describes correct prior knowledge only when answered without help. Label assistance and unknown context. Do not claim mastery from a reflection or from material merely covered.",
+    "Use learning_record=null when no record qualifies. Never put a sentence such as No learning record in that field. To write a record, return learning_record={markdown: content}. Write a record only for demonstrated understanding. A successful panel retrieval check also needs record_retrieval_check with its original review key, actual learner reply, and evidence. " +
+      assistanceRule() +
+      " Never infer independence from correctness. Label immediate corrections honestly. The service supplies the record file name. Correct quiz work may support a record for fully credited questions. Cite each supported question as quiz-id/question-id in the record. A pretest record describes correct prior knowledge only when answered without help. Label assistance and unknown context. Do not claim mastery from a reflection or from material merely covered.",
     "Put a reflection gap or an explicitly skipped retrieval gap in notes_markdown. Otherwise leave notes_markdown empty. Return learning_record=null when no evidence qualifies. Do not add records just to log activity.",
     "This ordinary teacher request cannot author lessons, change pages, or research new sources. Direct new lesson requests to Next lesson on the classroom page, with the requested objective in its optional topic field. Only that explicit authoring request permits classroom resource reading and web research, returning a validated authoring plan for host publication. A panel reply never starts another lesson. For due review, direct the learner to Start review in Progress.",
     "Learning record format:\n" + readDoc("LEARNING-RECORD-FORMAT.md"),
