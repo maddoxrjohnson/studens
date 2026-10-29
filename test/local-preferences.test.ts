@@ -7,8 +7,10 @@ import { classroomPage } from "../src/pages.ts";
 import { QUIZ_FOLLOW_UP, dedicatedTeacherPrompt, quizFollowUp } from "../src/prompts.ts";
 import {
   DAY_MS,
+  DEFAULT_DAILY_REVIEW_LIMIT,
   DEFAULT_REVIEW_SIZE,
   MAX_REVIEW_SIZE,
+  dailyReviewLimit,
   defaultReviewSize,
   scheduleItems,
   type ReviewEvent,
@@ -41,6 +43,35 @@ describe("local preference settings", () => {
     expect(() =>
       validateConfig({ hideAnswerReports: true, reviewSize: 10, syllabusPie: false }),
     ).not.toThrow();
+  });
+  it("validates the per-classroom daily review limits", () => {
+    for (const bad of [
+      { dailyReviewLimit: 0 },
+      { dailyReviewLimit: 51 },
+      { dailyReviewLimit: 2.5 },
+      { dailyReviewLimit: "15" },
+      { dailyReviewLimits: [] },
+      { dailyReviewLimits: "rust" },
+      { dailyReviewLimits: { rust: 0 } },
+      { dailyReviewLimits: { rust: 51 } },
+      { dailyReviewLimits: { rust: 2.5 } },
+      { dailyReviewLimits: { rust: 5, biology: "7" } },
+    ])
+      expect(() => validateConfig(bad as never)).toThrow(/dailyReviewLimit/);
+    for (const good of [
+      { dailyReviewLimit: 1 },
+      { dailyReviewLimit: 50 },
+      { dailyReviewLimits: {} },
+      { dailyReviewLimit: 15, dailyReviewLimits: { rust: 1, biology: 50 } },
+    ])
+      expect(() => validateConfig(good as never)).not.toThrow();
+  });
+  it("defaults to 15 cards per classroom and lets an override win", () => {
+    expect(DEFAULT_DAILY_REVIEW_LIMIT).toBe(15);
+    expect(dailyReviewLimit("rust")).toBe(15);
+    setConfig({ dailyReviewLimit: 8, dailyReviewLimits: { biology: 3 } });
+    expect(dailyReviewLimit("rust")).toBe(8);
+    expect(dailyReviewLimit("biology")).toBe(3);
   });
   it("keeps upstream behavior when nothing is configured", () => {
     expect(readConfig()).toEqual({});

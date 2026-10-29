@@ -1,6 +1,6 @@
 {
   "name": "studens",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "private": true,
   "description": "Interactive HTML lessons for Pi, Claude Code, and Codex, with passage questions and graded quizzes.",
   "type": "module",

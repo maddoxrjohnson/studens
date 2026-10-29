@@ -1,8 +1,9 @@
 /** Workload policy only: reservations never change memory, grades, or due dates. */
 import {
   DAY_MS,
-  defaultReviewSize,
+  DEFAULT_DAILY_REVIEW_LIMIT,
   MAX_REVIEW_SIZE,
+  dailyReviewLimit,
   isDue,
   findReviewItem,
   pickReviewItems,
@@ -38,39 +39,23 @@ export interface ReviewWorkload {
 }
 export const reviewDay = (at: number) => Math.floor(at / DAY_MS) * DAY_MS;
 
-/** Pure, time-explicit policy; no missed days accumulate credit. */
+/** Pure, time-explicit policy: a flat per-classroom cap; no missed days accumulate credit. */
 export function workload(
   items: ReviewItem[],
   reservations: ReviewReservation[],
   now: number,
+  cap: number = DEFAULT_DAILY_REVIEW_LIMIT,
 ): ReviewWorkload {
   const day = reviewDay(now);
   reservations = [...new Map(reservations.map((r) => [r.id, r])).values()];
-  const firstCompletions = new Map<string, number>();
-  for (const r of reservations)
-    for (const c of r.completions) {
-      const card = `${r.id}:${c.key}`;
-      firstCompletions.set(card, Math.min(firstCompletions.get(card) ?? Infinity, c.at));
-    }
-  const completedYesterday = [...firstCompletions.values()].filter(
-    (at) => at >= day - DAY_MS && at < day,
-  ).length;
-  const allowance = Math.min(MAX_REVIEW_SIZE, defaultReviewSize() + completedYesterday);
-  const reservedKeys = [
-    ...new Set(
-      reservations
-        .filter((r) => r.at < day + DAY_MS && (r.at >= day || r.active))
-        .flatMap((r) => r.keys),
-    ),
-  ];
-  const used = reservations
-    .filter((r) => r.at < day + DAY_MS && (r.at >= day || r.active))
-    .reduce((sum, r) => sum + new Set(r.cards ?? r.keys).size, 0);
-  const remaining = Math.max(0, allowance - used);
+  const today = reservations.filter((r) => r.at < day + DAY_MS && (r.at >= day || r.active));
+  const reservedKeys = [...new Set(today.flatMap((r) => r.keys))];
+  const used = today.reduce((sum, r) => sum + new Set(r.cards ?? r.keys).size, 0);
+  const remaining = Math.max(0, cap - used);
   const due = items.filter((item) => isDue(item, now) && !reservedKeys.includes(item.key));
   return {
-    cap: MAX_REVIEW_SIZE,
-    allowance,
+    cap,
+    allowance: cap,
     used,
     remaining,
     eligible: Math.min(remaining, due.length),
@@ -126,43 +111,52 @@ export function rootReservations(): ReviewReservation[] {
     })),
   );
 }
-export function rootWorkload(now: number, omitReservation?: string): ReviewWorkload {
-  const items = listClassrooms().flatMap((c) =>
-    reviewItems(c.name).map((item) => ({ ...item, key: `${c.name}/${item.key}` })),
-  );
-  return workload(
-    items,
-    rootReservations().filter((r) => r.id !== omitReservation),
-    now,
-  );
+/** Totals of every classroom's own budget; reserved keys are namespaced by classroom. */
+export function rootWorkload(now: number): ReviewWorkload {
+  const total: ReviewWorkload = {
+    cap: 0,
+    allowance: 0,
+    used: 0,
+    remaining: 0,
+    eligible: 0,
+    deferred: 0,
+    nextWindowAt: reviewDay(now) + DAY_MS,
+    reservedKeys: [],
+  };
+  for (const c of listClassrooms()) {
+    const w = classroomWorkload(c.name, reviewItems(c.name), now);
+    for (const key of ["cap", "allowance", "used", "remaining", "deferred"] as const)
+      total[key] += w[key];
+    // One daily batch takes at most one review's worth from each classroom.
+    total.eligible += Math.min(MAX_REVIEW_SIZE, w.eligible);
+    total.reservedKeys.push(...w.reservedKeys.map((key) => `${c.name}/${key}`));
+  }
+  return total;
 }
+/** Each classroom has its own daily budget (`dailyReviewLimit`), shared by its classroom and daily reviews. */
 export function classroomWorkload(
   classroom: string,
   items: ReviewItem[],
   now: number,
   omitReservation?: string,
 ): ReviewWorkload {
-  const root = rootWorkload(now, omitReservation ? `${classroom}/${omitReservation}` : undefined);
-  const reservedKeys = root.reservedKeys
-    .filter((key) => key.startsWith(`${classroom}/`))
-    .map((key) => key.slice(classroom.length + 1));
-  const due = items.filter((item) => isDue(item, now) && !reservedKeys.includes(item.key)).length;
-  return {
-    ...root,
-    reservedKeys,
-    eligible: Math.min(root.remaining, due),
-    deferred: Math.max(0, due - root.remaining),
-  };
+  return workload(
+    items,
+    classroomReservations(classroom).filter((r) => r.id !== omitReservation),
+    now,
+    dailyReviewLimit(classroom),
+  );
 }
 
-/** Daily all-topic fairness: least recently selected classrooms and topics first,
- * then round-robin one card per classroom/topic. Explicit choices use the same
- * budget through pickDailyItems but intentionally direct its remaining slots. */
+/** Daily all-topic fairness: least recently selected topics first, then round-robin
+ * one card per topic, up to each classroom's own limit. Explicit choices use the
+ * same budget through pickDailyItems but intentionally direct its remaining slots. */
 export function pickAcrossClassrooms(
   candidates: Array<{ classroom: string; items: ReviewItem[] }>,
   now: number,
   state: ReviewWorkload,
   history: ReviewReservation[],
+  limit: (classroom: string) => number = () => state.remaining,
 ): Map<string, ReviewItem[]> {
   const lastClass = (classroom: string) =>
     Math.max(
@@ -202,17 +196,9 @@ export function pickAcrossClassrooms(
         lastClass(a.classroom) - lastClass(b.classroom) || a.classroom.localeCompare(b.classroom),
     );
   const selected = new Map<string, ReviewItem[]>();
-  let count = 0;
-  while (count < state.remaining && classes.some((c) => c.queue.length)) {
-    for (const c of classes) {
-      if (count >= state.remaining) break;
-      const item = c.queue.shift();
-      if (!item) continue;
-      const picks = selected.get(c.classroom) ?? [];
-      picks.push(item);
-      selected.set(c.classroom, picks);
-      count++;
-    }
+  for (const c of classes) {
+    const picks = c.queue.slice(0, Math.max(0, limit(c.classroom)));
+    if (picks.length) selected.set(c.classroom, picks);
   }
   return selected;
 }

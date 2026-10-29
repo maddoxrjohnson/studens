@@ -51,30 +51,54 @@ it("keeps due counts and dates intact through absent days without accumulating a
   for (const day of [0, 1, 10, 365]) {
     const now = NOW + day * DAY_MS;
     const state = workload(all, [], now);
-    expect(state).toMatchObject({ cap: 12, allowance: 5, remaining: 5, eligible: 5, deferred: 25 });
+    expect(state).toMatchObject({
+      cap: 15,
+      allowance: 15,
+      remaining: 15,
+      eligible: 15,
+      deferred: 15,
+    });
     expect(summarize(all, now).due).toBe(30);
-    expect(pickDailyItems(all, now, 12, state)).toHaveLength(5);
+    expect(pickDailyItems(all, now, 12, state)).toHaveLength(12);
   }
   expect(JSON.stringify(all)).toBe(saved);
 });
-it("ramps from actual prior-day card completions, with exact UTC boundaries and no regrade credit", () => {
+it("keeps the cap flat: prior-day completions never raise or lower it, with exact UTC boundaries", () => {
   const all = items();
   const day = reviewDay(NOW);
-  const reservation: ReviewReservation = {
+  const yesterday: ReviewReservation = {
     id: "first",
     at: day - DAY_MS,
     keys: all.slice(0, 12).map((i) => i.key),
     active: false,
     completions: all.slice(0, 12).map((i) => ({ key: i.key, at: day - 1 })),
   };
-  expect(workload(all, [reservation], NOW).allowance).toBe(12);
-  reservation.completions = reservation.completions.slice(0, 3);
-  expect(workload(all, [reservation, reservation], NOW).allowance).toBe(8);
-  expect(workload(all, [reservation], day - DAY_MS - 1).allowance).toBe(5);
-  expect(workload(all, [reservation], day + DAY_MS).allowance).toBe(5);
-  reservation.completions = [{ key: "x", at: day }];
-  expect(workload(all, [reservation], NOW).allowance).toBe(5);
-  expect(workload(all, [reservation], day + DAY_MS).allowance).toBe(6);
+  // Twelve cards finished yesterday carry nothing over: no ramp, no used budget.
+  for (const cap of [undefined, 5, 40])
+    expect(workload(all, [yesterday], NOW, cap)).toMatchObject({
+      cap: cap ?? 15,
+      allowance: cap ?? 15,
+      used: 0,
+      remaining: cap ?? 15,
+    });
+  expect(workload(all, [yesterday], day - DAY_MS - 1, 5).allowance).toBe(5);
+  // A finished reservation made today still spends today's budget until the UTC boundary.
+  const today: ReviewReservation = {
+    ...yesterday,
+    id: "today",
+    at: day,
+    keys: all.slice(0, 4).map((i) => i.key),
+    completions: all.slice(0, 4).map((i) => ({ key: i.key, at: day + 1 })),
+  };
+  expect(workload(all, [yesterday, today], NOW, 5)).toMatchObject({ used: 4, remaining: 1 });
+  expect(workload(all, [yesterday, today], day + DAY_MS - 1, 5)).toMatchObject({ used: 4 });
+  expect(workload(all, [yesterday, today], day + DAY_MS, 5)).toMatchObject({
+    allowance: 5,
+    used: 0,
+    remaining: 5,
+  });
+  // Spending more than the cap (a lowered setting) floors remaining at zero.
+  expect(workload(all, [today], NOW, 2)).toMatchObject({ used: 4, remaining: 0, eligible: 0 });
 });
 it("reserves failed and unfinished cards across midnight and excludes them even for early reviews", () => {
   const all = items();
@@ -87,7 +111,7 @@ it("reserves failed and unfinished cards across midnight and excludes them even 
     active: true,
     completions: [],
   };
-  const state = workload(all, [r], NOW);
+  const state = workload(all, [r], NOW, 5);
   expect(state).toMatchObject({ used: 2, remaining: 3, eligible: 3, deferred: 23 });
   const picked = pickDailyItems(all, NOW, 12, state, true);
   expect(picked).toHaveLength(3);
@@ -112,6 +136,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   fixture.cleanup();
 });
+const setConfig = (config: object) =>
+  fs.writeFileSync(path.join(fixture.root, "test-config.json"), JSON.stringify(config));
 function seed(classroom = "rust") {
   seedClassroom(fixture, { classroom });
   const ids = Array.from({ length: 20 }, (_, i) => `q${i + 1}`);
@@ -124,7 +150,8 @@ function seed(classroom = "rust") {
     correct: Object.fromEntries(ids.map((id) => [id, true])),
   });
 }
-it("shares durable reservations across classroom starts, daily plans, topics, reload and clock changes", () => {
+it("shares one classroom's durable reservations across its starts, daily plans, topics, reload and clock changes", () => {
+  setConfig({ dailyReviewLimit: 5 });
   seed();
   seed("biology");
   const first = startReview("rust", randomUUID(), "pi", 3).session;
@@ -151,17 +178,19 @@ it("shares durable reservations across classroom starts, daily plans, topics, re
   expect(next.items.some((i) => first.items.some((a) => a.key === i.key))).toBe(false);
   const daily = startDailyReview(randomUUID(), "pi");
   expect(daily.groups.find((g) => g.classroom === "rust")!.plan.id).toBe(next.id);
-  expect(daily.groups.some((g) => g.classroom === "biology")).toBe(false);
+  // Rust's budget is spent, but biology has its own: the daily batch still serves it in full.
+  expect(daily.groups.find((g) => g.classroom === "biology")!.plan.items).toHaveLength(5);
   expect(() => startReview("biology", randomUUID(), "pi")).toThrow("allowance is reserved");
   const snapshot = JSON.stringify(dailyReviews());
   Date.now = () => NOW + DAY_MS;
   expect(startDailyReview(randomUUID(), "pi").id).toBe(daily.id);
   expect(JSON.stringify(dailyReviews())).toBe(snapshot);
   expect(reviewSessions("rust")).toHaveLength(2);
+  // The first review's three completions earn nothing tomorrow; only the unfinished plan still counts.
   expect(classroomWorkload("rust", store.reviewItems("rust"), NOW + DAY_MS)).toMatchObject({
-    allowance: 8,
+    allowance: 5,
     used: 2,
-    remaining: 6,
+    remaining: 3,
   });
   const rootLock = path.join(fixture.root, ".daily-reviews.lock");
   fs.writeFileSync(rootLock, "concurrent host");
@@ -171,19 +200,22 @@ it("shares durable reservations across classroom starts, daily plans, topics, re
 });
 
 // Nine classrooms publish and grade four days on disk; allow for filesystem work, not a latency claim.
-it("bounds a many-classroom daily batch and rotates classrooms/topics over successive days", () => {
+it("serves every classroom its own bounded share each day, with no carry-over between days", () => {
+  setConfig({ dailyReviewLimit: 2 });
   for (let c = 0; c < 9; c++) seed(`class-${c}`);
-  const served = new Set<string>();
-  const batches: Array<{ day: number; classes: string[]; count: number }> = [];
   for (let day = 0; day < 4; day++) {
     vi.mocked(Date.now).mockReturnValue(NOW + day * DAY_MS);
     const batch = startDailyReview(randomUUID(), "pi");
     const count = batch.groups.reduce((n, g) => n + g.plan.items.length, 0);
+    // Nine classrooms times two cards: the budget is per classroom, not one shared allowance.
+    expect(batch.groups.map((g) => g.classroom).sort()).toEqual(
+      Array.from({ length: 9 }, (_, c) => `class-${c}`),
+    );
+    for (const group of batch.groups) expect(group.plan.items).toHaveLength(2);
+    expect(count).toBe(18);
     expect(count).toBeLessThanOrEqual(rootWorkload(Date.now()).allowance);
-    expect(count).toBeLessThanOrEqual(12);
     expect(startDailyReview(randomUUID(), "pi").id).toBe(batch.id);
     for (const group of batch.groups) {
-      served.add(group.classroom);
       const saved = savePlannedReview(group.plan);
       completePreparedReview(saved);
       group.plan.items.forEach((item, i) =>
@@ -198,19 +230,14 @@ it("bounds a many-classroom daily batch and rotates classrooms/topics over succe
         }),
       );
     }
-    batches.push({ day, classes: batch.groups.map((g) => g.classroom), count });
-    expect(rootWorkload(Date.now()).remaining).toBe(0);
+    expect(rootWorkload(Date.now())).toMatchObject({ allowance: 18, used: 18, remaining: 0 });
     expect(() => startReview("class-8", randomUUID(), "pi", 12, { early: true })).toThrow(
       "allowance is reserved",
     );
   }
-  expect(served.size).toBe(9);
-  expect(batches[0].count).toBe(5);
-  expect(batches[1].count).toBe(10);
-  expect(batches[1].classes).toEqual(
-    expect.arrayContaining(["class-5", "class-6", "class-7", "class-8"]),
-  );
-  expect(batches[2].count).toBe(12);
+}, 20_000);
+
+it("rotates topics within a classroom", () => {
   // Separate topic queues remain fair even within a single classroom.
   const all = items().map((item, i) => ({ ...item, lesson: `lesson-${i % 3}` }));
   const candidates = [{ classroom: "topics", items: all }];
@@ -233,30 +260,60 @@ it("bounds a many-classroom daily batch and rotates classrooms/topics over succe
   expect(
     pickAcrossClassrooms([...candidates].reverse(), NOW, state, [...history].reverse()),
   ).toEqual(new Map([["topics", next]]));
-}, 20_000);
-
-it("gives never-selected classrooms priority with more classrooms than a daily allowance", () => {
-  const candidates = Array.from({ length: 9 }, (_, i) => ({ classroom: `c${i}`, items: items() }));
-  const state = workload([], [], NOW);
-  const first = pickAcrossClassrooms(candidates, NOW, state, []);
-  expect([...first.keys()]).toEqual(["c0", "c1", "c2", "c3", "c4"]);
-  const history: ReviewReservation[] = [...first].map(([classroom, picks]) => ({
-    id: classroom,
-    classroom,
-    at: NOW - DAY_MS,
-    keys: picks.map((i) => i.key),
-    active: false,
-    completions: [],
-    topics: picks.map((i) => reviewTopic(i).id),
-  }));
-  const next = pickAcrossClassrooms([...candidates].reverse(), NOW, state, history);
-  expect([...next.keys()]).toEqual(["c5", "c6", "c7", "c8", "c0"]);
-  expect([...first.values(), ...next.values()].flat().every((i) => Number.isFinite(i.dueAt))).toBe(
-    true,
-  );
 });
 
-it("serializes independent host processes against one root budget and reports lock contention", async () => {
+it("gives each classroom up to its own limit, with no count shared across classrooms", () => {
+  const candidates = Array.from({ length: 9 }, (_, i) => ({ classroom: `c${i}`, items: items() }));
+  const state = workload([], [], NOW);
+  // Without a limit function every classroom may take the whole remaining budget.
+  const all = pickAcrossClassrooms(candidates, NOW, state, []);
+  expect([...all.keys()].sort()).toEqual(candidates.map((c) => c.classroom));
+  for (const picks of all.values()) expect(picks).toHaveLength(state.remaining);
+  const limits: Record<string, number> = { c0: 1, c1: 100, c2: 0 };
+  const picked = pickAcrossClassrooms(
+    candidates,
+    NOW,
+    state,
+    [],
+    (classroom) => limits[classroom] ?? 4,
+  );
+  expect(picked.has("c2")).toBe(false);
+  expect(picked.get("c0")).toHaveLength(1);
+  expect(picked.get("c1")).toHaveLength(30);
+  for (const c of candidates.slice(3)) expect(picked.get(c.classroom)).toHaveLength(4);
+  for (const [classroom, picks] of picked) {
+    expect(new Set(picks.map((i) => i.key)).size).toBe(picks.length);
+    expect(picks.every((i) => Number.isFinite(i.dueAt))).toBe(true);
+    expect(candidates.find((c) => c.classroom === classroom)!.items).toEqual(
+      expect.arrayContaining(picks),
+    );
+  }
+  // A classroom's own history still rotates its topics; another classroom's does not matter.
+  const grouped = items().map((item, i) => ({ ...item, lesson: `lesson-${i % 3}` }));
+  const history: ReviewReservation[] = [
+    {
+      id: "previous",
+      classroom: "c0",
+      at: NOW - DAY_MS,
+      keys: [],
+      active: false,
+      completions: [],
+      topics: [reviewTopic(grouped[0]).id],
+    },
+  ];
+  const rotated = pickAcrossClassrooms(
+    [{ classroom: "c0", items: grouped }],
+    NOW,
+    state,
+    history,
+    () => 3,
+  );
+  expect(rotated.get("c0")).toHaveLength(3);
+  expect(reviewTopic(rotated.get("c0")![0]).id).not.toBe(reviewTopic(grouped[0]).id);
+});
+
+it("serializes independent host processes against per-classroom budgets and reports lock contention", async () => {
+  setConfig({ dailyReviewLimit: 5 });
   seed();
   seed("biology");
   const execute = promisify(execFile);
@@ -267,7 +324,11 @@ it("serializes independent host processes against one root budget and reports lo
       (
         await execute(process.execPath, ["--input-type=module", "-e", code], {
           cwd: process.cwd(),
-          env: { ...process.env, PI_CLASSROOMS_DIR: fixture.root },
+          env: {
+            ...process.env,
+            PI_CLASSROOMS_DIR: fixture.root,
+            PI_CLASSROOM_CONFIG: path.join(fixture.root, "test-config.json"),
+          },
         })
       ).stdout,
     );
@@ -276,27 +337,102 @@ it("serializes independent host processes against one root budget and reports lo
   expect(results.filter((r) => r.keys).length).toBeGreaterThan(0);
   for (const result of results)
     if (result.error) expect(result.error).toContain("locked daily review edits");
-  const used = rootWorkload(NOW).used;
-  expect(used).toBeLessThanOrEqual(5);
-  expect(used).toBe(results.filter((r) => r.keys).reduce((n, r) => n + r.keys.length, 0));
-  expect(rootWorkload(NOW).remaining).toBe(5 - used);
+  for (const result of results.filter((r) => r.keys)) {
+    const state = classroomWorkload(result.classroom, store.reviewItems(result.classroom), NOW);
+    expect(state.used).toBeLessThanOrEqual(5);
+    expect(state.used).toBe(result.keys.length);
+    expect(state.remaining).toBe(5 - state.used);
+  }
+  const total = results.filter((r) => r.keys).reduce((n, r) => n + r.keys.length, 0);
+  expect(rootWorkload(NOW)).toMatchObject({ cap: 10, used: total, remaining: 10 - total });
 });
 
-it("does not count legacy retakes as a card's first completion on a new day", () => {
-  const day = reviewDay(NOW);
-  const r: ReviewReservation = {
-    id: "legacy",
-    at: day - 3 * DAY_MS,
-    keys: ["a"],
-    active: false,
-    completions: [
-      { key: "a", at: day - 2 * DAY_MS },
-      { key: "a", at: day - 1 },
-    ],
-  };
-  expect(workload([], [r], NOW).allowance).toBe(5);
-  r.completions.push({ key: "b", at: day - 1 });
-  expect(workload([], [r], NOW).allowance).toBe(6);
+// Grade every card of a review once, which ends the review but leaves its cards counted today.
+function finishReview(session: ReturnType<typeof startReview>["session"], classroom = "rust") {
+  completePreparedReview(session);
+  session.items.forEach((item, i) =>
+    writeGradedAttempt({
+      classroom,
+      lesson: session.lesson,
+      quizId: i === 0 ? "review" : `review-${i + 1}`,
+      kind: "review",
+      at: NOW + i,
+      answers: [termAnswer(`r${i + 1}`, "owner", { reviewOf: item.key })],
+      correct: { [`r${i + 1}`]: true },
+    }),
+  );
+}
+
+it("lets one classroom exhaust its budget without blocking another, and carries nothing to the next day", () => {
+  setConfig({ dailyReviewLimit: 3 });
+  seed();
+  seed("biology");
+  const first = startReview("rust", randomUUID(), "pi", 12).session;
+  expect(first.items).toHaveLength(3);
+  finishReview(first);
+  expect(() => startReview("rust", randomUUID(), "pi", 3, { early: true })).toThrow(
+    "allowance is reserved",
+  );
+  expect(classroomWorkload("rust", store.reviewItems("rust"), NOW)).toMatchObject({
+    allowance: 3,
+    used: 3,
+    remaining: 0,
+  });
+  // Biology is untouched by rust's spending.
+  expect(classroomWorkload("biology", store.reviewItems("biology"), NOW)).toMatchObject({
+    used: 0,
+    remaining: 3,
+  });
+  const other = startReview("biology", randomUUID(), "pi", 12).session;
+  expect(other.items).toHaveLength(3);
+  expect(rootWorkload(NOW)).toMatchObject({ cap: 6, allowance: 6, used: 6, remaining: 0 });
+  finishReview(other, "biology");
+  // Next UTC day: a fresh flat budget, however much was finished yesterday.
+  expect(classroomWorkload("rust", store.reviewItems("rust"), NOW + DAY_MS)).toMatchObject({
+    allowance: 3,
+    used: 0,
+    remaining: 3,
+  });
+  expect(rootWorkload(NOW + DAY_MS)).toMatchObject({ cap: 6, used: 0, remaining: 6 });
+});
+
+it("leaves a classroom that spent its budget out of the daily batch while serving the others", () => {
+  setConfig({ dailyReviewLimit: 3 });
+  seed();
+  seed("biology");
+  finishReview(startReview("rust", randomUUID(), "pi", 3).session);
+  const daily = startDailyReview(randomUUID(), "pi");
+  expect(daily.groups.map((g) => g.classroom)).toEqual(["biology"]);
+  expect(daily.groups[0].plan.items).toHaveLength(3);
+});
+
+it("honors dailyReviewLimits per classroom and sums them at the root", () => {
+  setConfig({ dailyReviewLimit: 4, dailyReviewLimits: { biology: 2 } });
+  seed();
+  seed("biology");
+  expect(classroomWorkload("rust", store.reviewItems("rust"), NOW)).toMatchObject({
+    cap: 4,
+    allowance: 4,
+    remaining: 4,
+  });
+  expect(classroomWorkload("biology", store.reviewItems("biology"), NOW)).toMatchObject({
+    cap: 2,
+    allowance: 2,
+    remaining: 2,
+  });
+  expect(startReview("rust", randomUUID(), "pi", 12).session.items).toHaveLength(4);
+  expect(startReview("biology", randomUUID(), "pi", 12).session.items).toHaveLength(2);
+  const root = rootWorkload(NOW);
+  expect(root).toMatchObject({ cap: 6, allowance: 6, used: 6, remaining: 0, eligible: 0 });
+  expect(root.reservedKeys).toHaveLength(6);
+  expect(root.reservedKeys.filter((key) => key.startsWith("biology/"))).toHaveLength(2);
+  // A classroom override can also raise one above the shared default.
+  setConfig({ dailyReviewLimit: 4, dailyReviewLimits: { biology: 9 } });
+  expect(classroomWorkload("biology", store.reviewItems("biology"), NOW)).toMatchObject({
+    cap: 9,
+    used: 2,
+    remaining: 7,
+  });
 });
 
 it("reserves canonical aliases while charging every original saved card", () => {
@@ -309,7 +445,7 @@ it("reserves canonical aliases while charging every original saved card", () => 
     cards: ["q1", "q2", "q3"],
     completions: [],
   };
-  expect(workload([], [reserved], NOW)).toMatchObject({ used: 3, remaining: 2 });
+  expect(workload([], [reserved], NOW, 5)).toMatchObject({ used: 3, remaining: 2 });
 });
 
 it("keeps an older saved question alias eligible without selecting its objective twice", () => {

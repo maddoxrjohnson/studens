@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.1
+
+Based on 0.13.0. Upstream 0.12.1 is not merged yet.
+
+### Changed
+
+- The daily review allowance is now per classroom instead of shared by all classrooms.
+  Each classroom may reserve `dailyReviewLimit` cards per UTC day (default 15, at most 50),
+  with optional per-classroom `dailyReviewLimits` overrides. The allowance no longer ramps
+  from yesterday's completions. One review still holds at most 12 cards, and grades, memory
+  and due dates are unchanged.
+
 ## 0.13.0
 
 Based on 0.12.0. Upstream 0.12.1 is not merged yet.

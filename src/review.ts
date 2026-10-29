@@ -22,6 +22,17 @@ export function defaultReviewSize(): number {
   return readConfig().reviewSize ?? DEFAULT_REVIEW_SIZE;
 }
 export const MAX_REVIEW_SIZE = 12;
+export const DEFAULT_DAILY_REVIEW_LIMIT = 15;
+/** Review cards one classroom may reserve per UTC day: its override, else the shared setting. */
+export function dailyReviewLimit(classroom: string): number {
+  const config = readConfig();
+  const limits = config.dailyReviewLimits;
+  return (
+    (limits && Object.hasOwn(limits, classroom) ? limits[classroom] : undefined) ??
+    config.dailyReviewLimit ??
+    DEFAULT_DAILY_REVIEW_LIMIT
+  );
+}
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 

@@ -185,7 +185,8 @@ describe("fourteen UTC saved-due dates", () => {
     }));
     const before = structuredClone(items);
     const state = workload(items, [], NOW);
-    expect(state).toMatchObject({ eligible: 5, deferred: 15, allowance: 5 });
+    expect(state).toMatchObject({ eligible: 15, deferred: 5, allowance: 15 });
+    expect(workload(items, [], NOW, 5)).toMatchObject({ eligible: 5, deferred: 15, allowance: 5 });
     expect(memoryForecast(items, NOW).map((d) => d.count)).toEqual([20, ...Array(13).fill(0)]);
     expect(items).toEqual(before);
   });

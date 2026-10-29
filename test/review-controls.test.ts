@@ -55,7 +55,10 @@ it.each([0, 1, 2, 2.5, 13, Infinity, "3", null])(
     expect(reviewSessions("rust")).toEqual([]);
   },
 );
-it.each([3, 12])("bounds the requested maximum %i by the daily allowance", (size) => {
+const setConfig = (config: object) =>
+  fs.writeFileSync(path.join(fixture.root, "test-config.json"), JSON.stringify(config));
+it.each([3, 12])("bounds the requested maximum %i by the classroom's daily limit", (size) => {
+  setConfig({ dailyReviewLimit: 5 });
   const id = randomUUID();
   const review = startReview("rust", id, "pi", size).session;
   expect(review.items).toHaveLength(Math.min(size, 5));
@@ -314,6 +317,7 @@ it("requires explicit retry after a competing server holds the retirement lock",
 });
 
 it("keeps paused and retired items out of early selection while preserving restore history", () => {
+  setConfig({ dailyReviewLimit: 5 });
   for (let i = 0; i < 3; i++)
     writeGradedAttempt({
       at: Date.now() - (1.9 - i / 10) * DAY_MS,

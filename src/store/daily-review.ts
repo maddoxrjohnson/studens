@@ -13,8 +13,13 @@ import {
   preparedReviewItems,
 } from "../review-session.ts";
 import { withReviewEdit } from "../review-lock.ts";
-import { rootWorkload, rootReservations, pickAcrossClassrooms } from "../review-workload.ts";
-import { summarize } from "../review.ts";
+import {
+  classroomWorkload,
+  rootWorkload,
+  rootReservations,
+  pickAcrossClassrooms,
+} from "../review-workload.ts";
+import { MAX_REVIEW_SIZE, summarize } from "../review.ts";
 import { listClassrooms } from "./classrooms.ts";
 import { reviewItems } from "./review.ts";
 
@@ -166,13 +171,21 @@ function createDailyReview(
     classrooms.map((c) => [c.name, [...reviewSessions(c.name)].reverse().find(resumableReview)]),
   );
   const budget = rootWorkload(at);
+  const room = new Map(
+    classrooms.map((c) => [
+      c.name,
+      Math.min(MAX_REVIEW_SIZE, classroomWorkload(c.name, reviewItems(c.name), at).remaining),
+    ]),
+  );
   const candidates = classrooms
-    .filter((c) => !pending.get(c.name) && due[c.name] > 0)
+    .filter((c) => !pending.get(c.name) && due[c.name] > 0 && room.get(c.name)! > 0)
     .map((c) => ({
       classroom: c.name,
       items: preparedReviewItems(c.name, reviewItems(c.name)).eligible,
     }));
-  const selected = pickAcrossClassrooms(candidates, at, budget, rootReservations());
+  const selected = pickAcrossClassrooms(candidates, at, budget, rootReservations(), (c) =>
+    room.get(c)!,
+  );
   const groups: DailyGroup[] = [];
   // Keep the existing classroom navigation order; fairness determines membership
   // and allocations before these complete plans are saved together.
@@ -185,7 +198,10 @@ function createDailyReview(
       const picks = selected.get(name);
       const plan =
         pending.get(name) ??
-        planReview(name, randomUUID(), owner, 12, { at, keys: picks!.map((item) => item.key) });
+        planReview(name, randomUUID(), owner, MAX_REVIEW_SIZE, {
+          at,
+          keys: picks!.map((item) => item.key),
+        });
       if (plan.status !== "done" && plan.owner !== owner)
         throw new Error(
           `This review belongs to ${plan.owner}. Open that classroom host to continue.`,
@@ -200,8 +216,8 @@ function createDailyReview(
   if (!groups.length)
     throw new Error(
       Object.values(due).some((count) => count > 0)
-        ? budget.remaining === 0
-          ? "Due questions remain, but today's shared review allowance is reserved across classrooms. Continue saved reviews or return after the next UTC workload window. Due dates are unchanged."
+        ? Object.entries(due).every(([name, count]) => count === 0 || room.get(name) === 0)
+          ? "Due questions remain, but each classroom with due questions has reserved its daily review allowance. Continue saved reviews or return after the next UTC workload window. Due dates are unchanged."
           : "No prepared variants for the due questions. Prepare private review pools in their original lessons, then retry."
         : "No questions are due across classrooms.",
     );

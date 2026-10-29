@@ -19,6 +19,10 @@ export interface ClassroomConfig {
   reviewSize?: number;
   /** Local preference: build a review as one form with one submit, not one card per question. */
   reviewSingleForm?: boolean;
+  /** Local preference: review cards per classroom per UTC day. Whole number from 1 to 50; default 15. */
+  dailyReviewLimit?: number;
+  /** Per-classroom overrides of `dailyReviewLimit`, keyed by classroom name. Each 1 to 50. */
+  dailyReviewLimits?: Record<string, number>;
   /** Cache Claude's model catalog this many seconds (0-3600) instead of one discovery spawn per request. */
   teacherModelCatalogSeconds?: number;
   /** "fresh" runs every Claude teacher request in a new session; the saved session is left alone. */
@@ -101,6 +105,17 @@ export function validateConfig(config: ClassroomConfig): void {
     (!Number.isInteger(config.reviewSize) || config.reviewSize < 3 || config.reviewSize > 12)
   )
     throw new Error("reviewSize must be a whole number from 3 to 12.");
+  const limitOk = (v: unknown) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 50;
+  if (config.dailyReviewLimit !== undefined && !limitOk(config.dailyReviewLimit))
+    throw new Error("dailyReviewLimit must be a whole number from 1 to 50.");
+  if (config.dailyReviewLimits !== undefined) {
+    const limits = config.dailyReviewLimits as unknown;
+    if (!limits || typeof limits !== "object" || Array.isArray(limits))
+      throw new Error("dailyReviewLimits must be an object of classroom names to numbers.");
+    for (const [name, v] of Object.entries(limits))
+      if (!limitOk(v))
+        throw new Error(`dailyReviewLimits.${name} must be a whole number from 1 to 50.`);
+  }
   const wholeIn = (
     key: "teacherModelCatalogSeconds" | "teacherSessionMaxTokens",
     lo: number,

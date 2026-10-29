@@ -115,27 +115,25 @@ duration still caps each interval at floor(duration/4), minimum one day. This is
 heuristic limit, not a deadline. Never invent a learner deadline. The legacy `box`
 field is diagnostic only; it no longer determines any date.
 
-**Workload choices:** Across the entire classrooms root and UTC calendar day, cap new selections at 12
-(the existing maximum review size). After a day with no completed review cards,
-allow 5 (the existing default size). Today's allowance is min(12, 5 + distinct cards
-first graded yesterday). Missed days accumulate no allowance. Failed, published,
+**Workload choices:** Per classroom and UTC calendar day, cap new selections at the
+`dailyReviewLimit` setting (default 15, at most 50; `dailyReviewLimits` overrides it per
+classroom). One review still holds at most 12 cards. Missed days accumulate no allowance. Failed, published,
 and unstarted saved daily groups reserve their cards before writes; unfinished older
 plans continue to reserve them across midnight. Completed selections still consume
 their selection day's slots, even when their evidence remains unknown or a miss.
-Classroom, daily, topic and early-review entry points share this single budget and root
-transaction lock. Reload/recovery reuse plans; no old attempt or saved batch is
+A classroom's classroom, daily, topic and early-review entry points share its budget;
+all classrooms share the root transaction lock. Reload/recovery reuse plans; no old attempt or saved batch is
 rewritten to spread dates. Canonical aliases share a reservation; original saved cards still count separately toward workload. Already saved larger batches are grandfathered and may
 exceed a newly derived allowance; they can finish, but consume all available slots.
 This is a workload cap, not evidence of forgetting, an implicit grade change, or a
 scientifically optimal workload. Namespace card identities by classroom, so identical
 lesson keys in different subjects are separate cards. A card is one item in one
-saved review, and its first grade alone counts toward the next day's allowance;
-regrades and linked chat checks grant no extra slots. Classroom teachers and plans
-remain separate even though their new selections consume a shared root budget.
+saved review; regrades and linked chat checks grant no extra slots. One classroom's
+budget never limits another's.
 
 Due counts include deferred and reserved items; pausing and retirement keep their
 existing exclusions. The daily landing shows root totals and the classroom memory map shows
-local due slots against the shared allowance. Due dates stay separate from
+local due slots against that classroom's allowance. Due dates stay separate from
 new-selection slots, reserved/used slots, deferred work and the next UTC workload
 window. That window is the earliest budget reset, not a guaranteed review date.
 A prepared private variant is still required; a slot does not promise a usable variant.
@@ -152,7 +150,7 @@ is the scheduler's saved replay reason, not an explanation invented by a model.
 Its fourteen-date forecast counts current saved due dates once in UTC calendar days.
 Today includes the entire overdue backlog and later-today due times; subsequent
 dates show only newly due items. Paused and retired items are excluded. Reserved
-and deferred due items remain visible as due; today's actual root-wide allowance,
+and deferred due items remain visible as due; today's summed per-classroom allowances,
 used/reserved slots, local available slots and deferred count are shown separately.
 No future completions, repeat reviews, future allowances or shared-root allocations
 are predicted. The next due time is a saved scheduling estimate, not an allocated
@@ -162,8 +160,8 @@ no canonical state and create no evidence.
 For the all-topic daily picker, make one queue per classroom and per saved objective
 group/objective/historical lesson topic. Order classroom and topic queues by their
 latest saved selection time (never selected first), breaking ties by stable identifier.
-Round-robin one card per classroom, and one per topic within each classroom, up to
-the single remaining allowance. Keep the existing alphabetical classroom navigation
+Round-robin one card per topic within each classroom, up to min(12, that classroom's
+remaining allowance). Keep the existing alphabetical classroom navigation
 order after selection; save every selected group together before publishing one.
 Individual classroom and explicit topic/early choices may direct remaining slots;
 they cannot obtain another allowance. Within a topic, order by max(due time, latest

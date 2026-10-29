@@ -393,6 +393,11 @@ export async function verifyReviewControls(artifacts: string | null): Promise<vo
       )
         throw new Error("Early/topic review changed its due date or invented retention.");
       seedClassroom(fixture, { classroom: "many", title: "Many" });
+      // Rust has used 5 cards today (3 + 2). Each classroom has its own flat daily allowance.
+      fs.writeFileSync(
+        path.join(fixture.root, "test-config.json"),
+        JSON.stringify({ dailyReviewLimit: 5, dailyReviewLimits: { many: 7 } }),
+      );
       seed("many", "001-ownership", 14, Date.now() - 2 * DAY_MS);
       for (let i = 0; i < 3; i++)
         writeGradedAttempt({
@@ -411,11 +416,21 @@ export async function verifyReviewControls(artifacts: string | null): Promise<vo
         await page.locator('[data-cl-review-early]').check();
         await page.locator('[data-cl-review-size]').selectOption('12');
         await page.getByRole('button',{name:'Start review',exact:true}).click();
-        await page.getByText("Today's shared review allowance",{exact:false}).waitFor();
+        await page.getByText('Question 1 of 7 · 0 answered',{exact:true}).waitFor();
         ${shot("maximum-size")}
       `);
-      if (currentReview("many"))
-        throw new Error("Another classroom bypassed the shared allowance.");
+      // Allowances are per classroom: rust has spent its whole day, yet "many" starts in full,
+      // limited only by its own override (7), not the shared setting (5) or rust's spending.
+      if (currentReview("many")?.items.length !== 7)
+        throw new Error("Another classroom was blocked by rust, or ignored its own override.");
+      await code(`
+        await page.goto(${JSON.stringify(`${base}/c/rust`)});
+        await page.getByRole('button',{name:'Start review',exact:true}).click();
+        await page.getByText("Today's review allowance is reserved for this classroom (5/5)",{exact:false}).waitFor();
+        ${shot("classroom-allowance-spent")}
+      `);
+      if (currentReview("rust")?.id !== earlyReview.id || reviewSessions("rust").length !== 2)
+        throw new Error("A spent classroom allowance still created a review.");
       if (
         JSON.stringify(store.reviewItems("other")) !== unrelated ||
         JSON.stringify(store.listGrades("rust", "001-ownership")) !== JSON.stringify(originalGrades)
@@ -479,7 +494,7 @@ export async function verifyReviewControls(artifacts: string | null): Promise<vo
           ),
         );
       console.log(
-        `PASS: ${host} size 3..12, topic/classroom scope, early interval, retirement/history, report receipt/retry, stale actions and recovery`,
+        `PASS: ${host} size 3..12, topic/classroom scope, early interval, retirement/history, per-classroom allowance and override, report receipt/retry, stale actions and recovery`,
       );
     } catch (error) {
       if (evidence) {

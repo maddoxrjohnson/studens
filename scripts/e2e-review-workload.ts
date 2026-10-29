@@ -1,5 +1,5 @@
 import { verifyRootWorkload } from "./e2e-review-workload-root.ts";
-/** Observe workload slots and unchanged overdue history through classroom controls. */
+/** Observe a classroom's flat daily allowance and unchanged overdue history through classroom controls. */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DAY_MS, summarize } from "../src/review.ts";
@@ -30,6 +30,13 @@ export async function verifyReviewWorkload(artifacts: string | null): Promise<vo
   });
   const original = JSON.stringify(store.listGrades("rust", "001-ownership"));
   const originalDates = store.reviewItems("rust").map((i) => ({ key: i.key, dueAt: i.dueAt }));
+  const setLimit = (config: object) =>
+    fs.writeFileSync(path.join(fixture.root, "test-config.json"), JSON.stringify(config));
+  // Unconfigured, a classroom gets the flat default of 15 cards a day; no ramp from other days.
+  const unconfigured = classroomWorkload("rust", store.reviewItems("rust"), Date.now());
+  if (unconfigured.cap !== 15 || unconfigured.eligible !== 15 || unconfigured.deferred !== 5)
+    throw new Error("Default daily allowance is not a flat 15 per classroom.");
+  setLimit({ dailyReviewLimit: 5 });
   let teacherTurns = 0;
   server.setHooks({
     reviewOwner: "pi",
@@ -96,9 +103,14 @@ export async function verifyReviewWorkload(artifacts: string | null): Promise<vo
       throw new Error("Completed card selected twice in one workload day.");
     await answer(2);
     await code(
-      `await page.goto(${JSON.stringify(`${base}/c/rust`)});await page.getByRole('button',{name:'Start review',exact:true}).click();await page.getByText("Today's shared review allowance is reserved",{exact:false}).waitFor();${shot("cap-error-mobile")}await page.reload();await page.getByRole('button',{name:'Start review',exact:true}).waitFor();await page.getByRole('button',{name:'Start review',exact:true}).click();await page.getByText("Today's shared review allowance is reserved",{exact:false}).waitFor();await page.setViewportSize({width:1440,height:1000});${shot("cap-error-desktop")}await page.getByText('Manage review items',{exact:true}).click();${shot("due-reasons")} `,
+      `await page.goto(${JSON.stringify(`${base}/c/rust`)});await page.getByRole('button',{name:'Start review',exact:true}).click();await page.getByText("Today's review allowance is reserved for this classroom (5/5)",{exact:false}).waitFor();${shot("cap-error-mobile")}await page.reload();await page.getByRole('button',{name:'Start review',exact:true}).waitFor();await page.getByRole('button',{name:'Start review',exact:true}).click();await page.getByText("Today's review allowance is reserved for this classroom (5/5)",{exact:false}).waitFor();await page.setViewportSize({width:1440,height:1000});${shot("cap-error-desktop")}await page.getByText('Manage review items',{exact:true}).click();${shot("due-reasons")} `,
     );
     const work = classroomWorkload("rust", store.reviewItems("rust"), Date.now());
+    // Five completed cards earn nothing back today, and the page states this classroom's own budget.
+    await code(
+      `await page.goto(${JSON.stringify(`${base}/c/rust`)});if(!(await page.locator('[data-review-workload]').textContent()).includes("5 of this classroom's 5 daily review cards"))throw new Error('Classroom page lost its own allowance.');`,
+    );
+    if (work.cap !== 5) throw new Error("Classroom workload ignored its configured allowance.");
     if (
       work.used !== 5 ||
       work.remaining !== 0 ||
@@ -107,6 +119,20 @@ export async function verifyReviewWorkload(artifacts: string | null): Promise<vo
       teacherTurns !== 0
     )
       throw new Error("Cap/reload changed selection or woke a teacher.");
+    // The only classroom with due work has spent its allowance: daily review refuses and is disabled.
+    const dailyRefused = await fetch(`${base}/api/daily-review`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: crypto.randomUUID() }),
+    });
+    if (
+      dailyRefused.status !== 409 ||
+      !(await dailyRefused.text()).includes("has reserved its daily review allowance")
+    )
+      throw new Error("Daily review ignored a classroom's spent allowance.");
+    await code(
+      `await page.goto(${JSON.stringify(base)});await page.getByText("Every classroom with due work has used today's allowance.",{exact:false}).waitFor();if(!await page.getByRole('button',{name:'Start daily review',exact:true}).isDisabled())throw new Error('Daily review stayed enabled with every classroom spent.');${shot("daily-spent")}`,
+    );
     if (JSON.stringify(store.listGrades("rust", "001-ownership")) !== original)
       throw new Error("Workload policy mutated original grades.");
     // Matches upstream 0.12.1: a correct delayed answer extends only the selected items.
@@ -163,7 +189,7 @@ export async function verifyReviewWorkload(artifacts: string | null): Promise<vo
         ),
       );
     console.log(
-      "PASS: workload 20 overdue -> 5 available / 15 deferred; 3+2 unique closed cards, explicit cap error/reload, unchanged due history and restart",
+      "PASS: workload 20 overdue -> default 15, limit 5 -> 5 available / 15 deferred; 3+2 unique closed cards, explicit cap error/reload, spent daily review, unchanged due history and restart",
     );
   } catch (error) {
     if (artifacts)

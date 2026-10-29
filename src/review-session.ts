@@ -235,7 +235,7 @@ export function planReview(
       )
     )
       throw new Error(
-        `Today's shared review allowance is reserved (${budget.used}/${budget.allowance}; cap ${budget.cap}). Continue saved classroom or daily reviews. This allowance covers all classrooms. The next workload window starts ${new Date(budget.nextWindowAt).toISOString()}; overdue dates are unchanged.`,
+        `Today's review allowance is reserved for this classroom (${budget.used}/${budget.cap}). Continue saved classroom or daily reviews. Each classroom has its own daily allowance. The next workload window starts ${new Date(budget.nextWindowAt).toISOString()}; overdue dates are unchanged.`,
       );
     const selectable = (item: ReviewItem) =>
       !item.needsReteach && (options.early || isDue(item, at));
