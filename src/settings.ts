@@ -6,6 +6,7 @@ import { configPath, readConfig, validateConfig } from "./config.ts";
 import { classroomDir, classroomsRoot, safeStaticFile, isValidSlug } from "./paths.ts";
 import * as store from "./store.ts";
 import { notesStub } from "./prompts.ts";
+import { DEFAULT_DAILY_REVIEW_LIMIT } from "./review.ts";
 
 export function revision(source: string): string {
   return createHash("sha256").update(source).digest("hex");
@@ -69,6 +70,43 @@ export function saveConnectionSettings(values: Record<string, unknown>, expected
   edit(configPath(), expected, () => {
     const config = { ...readConfig(), ...values };
     if (config.port === null) delete config.port;
+    validateConfig(config);
+    return JSON.stringify(config, null, 2) + "\n";
+  });
+}
+/** `limit` is this classroom's `dailyReviewLimits` entry; null uses the shared `dailyReviewLimit`. */
+export function reviewSettings(classroom: string) {
+  const config = readConfig();
+  const limits = config.dailyReviewLimits;
+  return {
+    revision: revision(readOptional(configPath())),
+    values: {
+      limit: limits && Object.hasOwn(limits, classroom) ? limits[classroom] : null,
+      sharedLimit: config.dailyReviewLimit ?? null,
+    },
+    defaultLimit: DEFAULT_DAILY_REVIEW_LIMIT,
+  };
+}
+export function saveReviewSettings(
+  classroom: string,
+  values: Record<string, unknown>,
+  expected: unknown,
+): void {
+  for (const key of Object.keys(values))
+    if (!["limit", "sharedLimit"].includes(key)) throw new Error(`Unknown review setting: ${key}.`);
+  edit(configPath(), expected, () => {
+    const config = readConfig();
+    const limits = { ...config.dailyReviewLimits };
+    if ("limit" in values) {
+      if (values.limit === null) delete limits[classroom];
+      else limits[classroom] = values.limit as number;
+    }
+    if (Object.keys(limits).length) config.dailyReviewLimits = limits;
+    else delete config.dailyReviewLimits;
+    if ("sharedLimit" in values) {
+      if (values.sharedLimit === null) delete config.dailyReviewLimit;
+      else config.dailyReviewLimit = values.sharedLimit as number;
+    }
     validateConfig(config);
     return JSON.stringify(config, null, 2) + "\n";
   });

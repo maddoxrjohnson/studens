@@ -39,6 +39,10 @@ upstream behavior.
 | `teacherSessionMaxTokens`    | unset       | Start a fresh Claude teacher session once a request used more input tokens than this (20000 to 2000000). Requests carry their full context, so this is safe.                                                                                          |
 | `teacherRequestOverrides`    | unset       | `{"chat": {"model": "...", "effort": "low"}}`. Only `chat`, `refill`, and `reflect` can be overridden. Grading and lesson requests never are.                                                                                                         |
 
+A classroom's Settings page edits both review limits under Daily reviews. Leaving that
+classroom's field blank removes its `dailyReviewLimits` entry; leaving the shared field blank
+removes `dailyReviewLimit`.
+
 For the lowest usage with the same grading, set `"teacherSessions": "fresh"`, `"teacherPromptOrder": "cache"`, `"teacherModelCatalogSeconds": 300` and `"teacherRequestOverrides": {"chat": {"model": "claude-sonnet-5-5", "effort": "low"}, "reflect": {"model": "claude-sonnet-5-5", "effort": "low"}, "refill": {"model": "claude-sonnet-5-5"}}`. Measured on a 24-lesson classroom, five panel replies used about 70% fewer token-cost units than resuming one session, and each reply after the first about 85% fewer. `teacherSessionMaxTokens` is unnecessary with fresh sessions.
 
 A classroom that sets its own teacher model keeps it. Overrides apply to the Claude teacher only.

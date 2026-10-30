@@ -22,6 +22,12 @@ async function request(url, options) {
     throw new Error(result.error || `Settings request failed (${response.status}).`);
   return result;
 }
+function renderReviewDefaults() {
+  const shared = state.review.values.sharedLimit ?? state.review.defaultLimit;
+  root.querySelector("[data-review-limit]").placeholder = `Shared default (${shared})`;
+  root.querySelector("[data-review-shared-limit]").placeholder =
+    `Built-in default (${state.review.defaultLimit})`;
+}
 function modelInput() {
   modelForm.querySelector("[data-custom-model]").hidden = select.value !== "__custom__";
 }
@@ -143,7 +149,7 @@ async function load() {
     state = await request(api);
     teacherStatus = state.teacher;
     showError(root.querySelector("[data-teacher-status-error]"));
-    for (const section of ["preferences", "connection"]) {
+    for (const section of ["preferences", "review", "connection"]) {
       const form = root.querySelector(`[data-settings-form="${section}"]`);
       for (const [name, value] of Object.entries(state[section].values)) {
         const input = form.elements[name];
@@ -151,6 +157,7 @@ async function load() {
         else input.value = value ?? "";
       }
     }
+    renderReviewDefaults();
     root.querySelector("[data-connection-current]").textContent =
       `Currently serving on local port ${state.currentPort}. A blank port uses ${state.host === "service" ? "43123" : "an available port"}.`;
     root.querySelector("[data-connection-override]").textContent = [
@@ -219,6 +226,12 @@ for (const form of root.querySelectorAll("[data-settings-form]"))
       // Keep unsaved fields in the other forms intact.
       state[section === "model" ? "teacher" : section] =
         next[section === "model" ? "teacher" : section];
+      // Review and connection share classroom.json, so both need its new revision.
+      if (section === "review" || section === "connection") {
+        state.review.revision = next.review.revision;
+        state.connection.revision = next.connection.revision;
+      }
+      if (section === "review") renderReviewDefaults();
       teacherStatus = next.teacher;
       renderTeacher();
       if (section === "model") renderModels();
@@ -230,7 +243,9 @@ for (const form of root.querySelectorAll("[data-settings-form]"))
           ? "Saved. Links updated; local port applies after a server restart."
           : section === "model"
             ? "Saved for the next teacher request. Failed requests still need Retry request on the lesson."
-            : "Preferences saved for this classroom.";
+            : section === "review"
+              ? "Saved. Applies to the next review you start."
+              : "Preferences saved for this classroom.";
     } catch (error) {
       status.textContent = "Save failed.";
       showError(errorBox, error.message);

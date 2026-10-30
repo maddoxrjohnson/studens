@@ -5,9 +5,12 @@ import { makeFixture, seedClassroom, type Fixture } from "./helpers.ts";
 import {
   connectionSettings,
   learnerPreferences,
+  reviewSettings,
   saveConnectionSettings,
   saveLearnerPreferences,
+  saveReviewSettings,
 } from "../src/settings.ts";
+import { dailyReviewLimit } from "../src/review.ts";
 import { readConfig } from "../src/config.ts";
 import { servicePort } from "../src/service-client.ts";
 import * as server from "../src/server.ts";
@@ -55,6 +58,32 @@ it("merges validated connection settings without exposing or replacing unrelated
   expect(readConfig().port).toBe(43101);
   saveConnectionSettings({ port: null }, connectionSettings().revision);
   expect(readConfig().port).toBeUndefined();
+});
+it("saves per-classroom and shared daily review limits without replacing unrelated config", () => {
+  f.write(
+    "test-config.json",
+    JSON.stringify({ secret: "private sentinel", port: 43100, dailyReviewLimits: { algebra: 8 } }),
+  );
+  const old = reviewSettings("rust");
+  expect(old.values).toEqual({ limit: null, sharedLimit: null });
+  expect(dailyReviewLimit("rust")).toBe(old.defaultLimit);
+  saveReviewSettings("rust", { limit: 30, sharedLimit: 20 }, old.revision);
+  expect(readConfig()).toEqual({
+    secret: "private sentinel",
+    port: 43100,
+    dailyReviewLimit: 20,
+    dailyReviewLimits: { algebra: 8, rust: 30 },
+  });
+  expect([dailyReviewLimit("rust"), dailyReviewLimit("algebra")]).toEqual([30, 8]);
+  expect(() => saveReviewSettings("rust", { limit: 31 }, old.revision)).toThrow(/changed since/);
+  // A review save advances the revision the connection form must present.
+  expect(connectionSettings().revision).toBe(reviewSettings("rust").revision);
+  for (const values of [{ limit: 0 }, { limit: 51 }, { limit: 2.5 }, { limit: "9" }, { port: 1 }])
+    expect(() => saveReviewSettings("rust", values, reviewSettings("rust").revision)).toThrow();
+  expect(readConfig().dailyReviewLimits).toEqual({ algebra: 8, rust: 30 });
+  saveReviewSettings("rust", { limit: null, sharedLimit: null }, reviewSettings("rust").revision);
+  saveReviewSettings("algebra", { limit: null }, reviewSettings("algebra").revision);
+  expect(readConfig()).toEqual({ secret: "private sentinel", port: 43100 });
 });
 it("does not repair malformed config or silently choose an occupied port", async () => {
   f.write("test-config.json", "private-config-value-not-json");

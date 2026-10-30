@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.2
+
+Based on 0.13.1. Upstream 0.12.1 is not merged yet.
+
+### Added
+
+- A Daily reviews section on each classroom's Settings page sets that classroom's cards per
+  day (`dailyReviewLimits`) and the shared default (`dailyReviewLimit`). A blank field removes
+  its key. Changes apply to the next review.
+
 ## 0.13.1
 
 Based on 0.13.0. Upstream 0.12.1 is not merged yet.

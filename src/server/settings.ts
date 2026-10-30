@@ -3,8 +3,10 @@ import type * as http from "node:http";
 import {
   connectionSettings,
   learnerPreferences,
+  reviewSettings,
   saveConnectionSettings,
   saveLearnerPreferences,
+  saveReviewSettings,
 } from "../settings.ts";
 import { classroomDir, isValidSlug } from "../paths.ts";
 import * as store from "../store.ts";
@@ -70,6 +72,7 @@ export async function handleSettings(
         }
       } else if (input.section === "preferences")
         saveLearnerPreferences(classroom, values, input.revision);
+      else if (input.section === "review") saveReviewSettings(classroom, values, input.revision);
       else if (input.section === "model") {
         if (!hooks?.setTeacherModel)
           throw new Error("Open this classroom from your agent to attach its persistent teacher.");
@@ -83,6 +86,7 @@ export async function handleSettings(
     return sendJson(res, {
       connection: connectionSettings(),
       preferences: learnerPreferences(classroom),
+      review: reviewSettings(classroom),
       teacher: hooks?.teacherSettings?.(classroom) ?? null,
       host: hooks?.delivery === "service" ? "service" : "pi",
       currentPort: getPort(),

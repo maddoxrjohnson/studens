@@ -1,6 +1,6 @@
 # Classroom settings
 
-Edit learner preferences, connection settings, and the model for a persistent classroom teacher.
+Edit learner preferences, daily review limits, connection settings, and the model for a persistent classroom teacher.
 
 ## Sub-features
 
@@ -11,6 +11,7 @@ Edit learner preferences, connection settings, and the model for a persistent cl
 - Show invalid saved values and unavailable storage with a specific error and explicit retry.
 
 - Keep pace, depth, and tone in NOTES.md without replacing other preferences or its index.
+- Save this classroom's daily review limit and the shared default in classroom.json; blank removes the key. Saving review limits must not make a later connection save stale, or the reverse.
 - Validate local and tailnet ports; preserve unrelated configuration and routes.
 - Apply tailnet link changes on save; keep the current local listener until an explicit restart.
 - Discover teacher models from the installed host, including configured and custom IDs.
@@ -25,10 +26,11 @@ Edit learner preferences, connection settings, and the model for a persistent cl
 1. Open a classroom and select Settings beside Review history.
 2. Choose Theme and Accent in Appearance. These choices save immediately in this browser for all classrooms.
 3. Edit Pace, Depth, or Tone and select Save preferences.
-4. For Pi, Claude, or Codex, choose Teacher model or Custom model ID… and select Save teacher model.
-5. Return to the lesson and send a reply. Reopen Settings to read Last answering model separately from Requested setting.
-6. After a failed model request, choose a model in Settings, then use Retry request on the lesson.
-7. Save connection settings to apply links. Stop and restart the server explicitly to apply a local port change, then get its new link from the agent.
+4. Under Daily reviews, set this classroom's cards per day or the shared default and select Save daily reviews.
+5. For Pi, Claude, or Codex, choose Teacher model or Custom model ID… and select Save teacher model.
+6. Return to the lesson and send a reply. Reopen Settings to read Last answering model separately from Requested setting.
+7. After a failed model request, choose a model in Settings, then use Retry request on the lesson.
+8. Save connection settings to apply links. Stop and restart the server explicitly to apply a local port change, then get its new link from the agent.
 
 ## Driving it with playwright-cli
 

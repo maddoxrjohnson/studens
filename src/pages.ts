@@ -638,6 +638,16 @@ export function settingsPage(classroom: Classroom): string {
         <button class="cl-button" type="submit">Save preferences</button><p role="status" data-save-status></p>
       </form>
     </section>
+    <section class="cl-settings-section cl-card-box" aria-labelledby="review-heading">
+      <h2 id="review-heading">Daily reviews</h2>
+      <p>The most review cards each classroom can take per UTC day, across its own reviews and the daily review. One review still holds at most 12 cards. Changes apply to the next review you start.</p>
+      <form data-settings-form="review">
+        <label>Cards per day in this classroom<input name="limit" type="number" min="1" max="50" step="1" data-review-limit></label>
+        <label>Shared default for all classrooms<input name="sharedLimit" type="number" min="1" max="50" step="1" data-review-shared-limit></label>
+        <p>Leave this classroom blank to use the shared default. Each limit is a whole number from 1 to 50.</p>
+        <button class="cl-button" type="submit">Save daily reviews</button><p role="status" data-save-status></p>
+      </form>
+    </section>
     <section class="cl-settings-section cl-card-box" aria-labelledby="teacher-heading">
       <h2 id="teacher-heading">Your teacher</h2><p data-teacher-owner></p><p role="alert" data-teacher-status-error hidden></p>
       <p data-teacher-active></p><p data-teacher-request></p><p data-teacher-work></p><div role="alert" data-teacher-error hidden></div>
