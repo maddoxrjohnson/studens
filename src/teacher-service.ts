@@ -904,13 +904,31 @@ export class TeacherService {
       }
       case "review":
         return { operations: ["publish_review"], required: true, messageRequired: true };
-      case "chat":
+      case "chat": {
         if (r.target.startsWith("reteach:")) return { operations: [], messageRequired: true };
+        // The same saved reply and review items that apply() later checks.
+        const answer = this.states
+          .get(r.classroom)
+          ?.messages.find((m) => m.id === r.id && m.role === "learner")?.text;
         return {
           operations: ["record_retrieval_check"],
           messageRequired: true,
           notesAllowed: true,
+          response: "retrieval-check",
+          retrievalTarget: {
+            classroom: r.classroom,
+            answer,
+            // findReviewItem accepts an item key or one of its exact question keys.
+            reviewKeys: [
+              ...new Set(
+                store
+                  .lessonReviewItems(r.classroom, r.lesson)
+                  .flatMap((item) => [item.key, ...(item.questionKeys ?? [])]),
+              ),
+            ],
+          },
         };
+      }
       case "reflect":
         return { operations: [], messageRequired: true, notesAllowed: true };
       case "resume":
@@ -1022,7 +1040,7 @@ export class TeacherService {
     }
     return dedicatedTeacherPrompt(
       r.id,
-      `Current request kind: ${r.kind}. ${contract.response === "passage-answer" ? "Return the typed passage answer fields from the current response schema." : contract.required ? "Return exactly one call from the tool definitions." : contract.operations.length ? "Return only retrieval calls supported by this learner reply. Otherwise return calls=[]." : "Return calls=[]."}\n\n${requestPrompt}${codeRecordReferences ? `\n\n${codeRecordReferences}` : ""}`,
+      `Current request kind: ${r.kind}. ${contract.response === "passage-answer" ? "Return the typed passage answer fields from the current response schema." : contract.response === "retrieval-check" ? "Return retrieval_check from the current response schema only when this learner reply demonstrates understanding. Otherwise return retrieval_check=null." : contract.required ? "Return exactly one call from the plan operation definitions." : contract.operations.length ? "Return only retrieval calls supported by this learner reply. Otherwise return calls=[]." : "Return calls=[]."}\n\n${requestPrompt}${codeRecordReferences ? `\n\n${codeRecordReferences}` : ""}`,
       context,
       defs.map((t) => {
         const parameters = structuredClone(t.parameters);
@@ -1034,7 +1052,9 @@ export class TeacherService {
         }
         return { name: t.name, description: t.description, parameters };
       }),
-      contract.response === "passage-answer",
+      contract.response === "passage-answer" || contract.response === "retrieval-check"
+        ? contract.response
+        : undefined,
     );
   }
   private async drain(classroom: string): Promise<void> {
@@ -1053,6 +1073,7 @@ export class TeacherService {
           r.requestedModel = state.identity.requestedModel ?? null;
           r.originatingIdentity = { ...state.identity };
           delete r.resolvedModel;
+          delete r.streamDigest;
           if (r.kind === "lesson")
             updateLessonRequest(this.lessonRequest(r), { status: "running", error: undefined });
           if (r.kind === "review") updateReview(this.reviewSession(r), "running");
@@ -1062,6 +1083,8 @@ export class TeacherService {
           }
           saveTeacherState(classroom, state);
           this.publish(classroom, r.lesson);
+          // One contract per run: rebuilding it after inference could lose an unsaved plan.
+          const contract = this.contract(r);
           const controller = new AbortController();
           this.controllers.add(controller);
           let plan;
@@ -1080,7 +1103,7 @@ export class TeacherService {
                 saveTeacherState(classroom, state);
               },
               controller.signal,
-              this.contract(r),
+              contract,
               (value) => {
                 r.modelOutput = value;
                 saveTeacherState(classroom, state);
@@ -1095,12 +1118,18 @@ export class TeacherService {
                 saveTeacherState(classroom, state);
                 this.publish(classroom, r.lesson);
               },
+              (digest) => {
+                r.streamDigest = digest;
+                saveTeacherState(classroom, state);
+              },
             );
           } finally {
             this.controllers.delete(controller);
           }
           r.plan = parsePlan(plan);
-          r.planVersion = 2;
+          // Version 3 marks a retrieval check that code serialized from typed reply data.
+          // A null check has no call, so it stays readable by older packages.
+          r.planVersion = contract.response === "retrieval-check" && r.plan.calls.length ? 3 : 2;
           r.planValidated = false;
           r.status = "planned";
           saveTeacherState(classroom, state);
@@ -1111,6 +1140,8 @@ export class TeacherService {
         await this.apply(r, state);
         r.finishedAt = Date.now();
         r.status = "done";
+        // The digest only diagnoses failures.
+        delete r.streamDigest;
         if (r.kind === "review") updateReview(this.reviewSession(r), "done");
         console.log(
           `[teacher] ${state.identity.backend} ${classroom}/${r.lesson} ${r.id} done in ${r.finishedAt - r.startedAt}ms.`,
@@ -1326,6 +1357,8 @@ export class TeacherService {
           throw new Error(`Teacher omitted ${key}.`);
       return { name: c.name, args, tool };
     });
+    if (r.planVersion === 3 && (r.kind !== "chat" || parsed.length > 1))
+      throw new Error("A typed panel reply plan permits at most one retrieval check.");
     const pretest = r.kind === "quiz" && store.findSubmission(r.target)?.kind === "pretest";
     const quiz = r.kind === "quiz" ? store.findSubmission(r.target) : null;
     if (quiz) {

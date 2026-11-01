@@ -80,7 +80,7 @@ export function prepareResume(input: ResumeInput): ResumeRequest {
         : "Saved retrieval checks after this grade resolve each missed item. Explain that and ask whether the learner is ready to continue.",
       "This is a handoff, not a learner answer. Do not grade again, write a learning record, record a retrieval check, change notes, or start a new lesson. Preserve all assessments and evidence.",
       "Write your final message to the learner in the teacher panel. Keep learner replies there.",
-      quizFollowUp(),
+      quizFollowUp("service"),
       `Saved submission: ${JSON.stringify(submission)}`,
       `Saved grade: ${JSON.stringify(latest.grade)}`,
       `Review items: ${JSON.stringify(items)}`,

@@ -49,10 +49,12 @@ When a later record contradicts an earlier one (the user's understanding deepene
 
 ## Link a quiz correction
 
-After a successful panel retrieval check, use `record_retrieval_check` to link an
-active record to the original review item. Include the learner's actual answer and
-the new question. Explain how that answer demonstrates the missed idea. Use the
-item key `<lesson>/<quiz id>/<question id>` from the grade or review tool.
+After a successful panel retrieval check, link an active record to the original
+review item with a retrieval check (`record_retrieval_check`). Initiating hosts call
+it as a tool; a dedicated teacher returns it in its plan. Include the learner's
+actual answer and the new question. Explain how that answer demonstrates the missed
+idea. Use the item key `<lesson>/<quiz id>/<question id>` from the grade or review
+schedule.
 
 This link updates current health and the review schedule. It preserves the quiz
 score and attempt. The runtime does not infer mastery from free-form prose.

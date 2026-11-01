@@ -4,7 +4,12 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readConfig, validateConfig } from "../src/config.ts";
 import { classroomPage } from "../src/pages.ts";
-import { QUIZ_FOLLOW_UP, dedicatedTeacherPrompt, quizFollowUp } from "../src/prompts.ts";
+import {
+  PLAN_OPERATIONS_HEADING,
+  QUIZ_FOLLOW_UP,
+  dedicatedTeacherPrompt,
+  quizFollowUp,
+} from "../src/prompts.ts";
 import {
   DAY_MS,
   DEFAULT_DAILY_REVIEW_LIMIT,
@@ -226,7 +231,7 @@ describe("teacher prompt order", () => {
   const at = (prompt: string, marker: string) => prompt.indexOf(marker);
   it("keeps tool definitions, then the request, then the context by default", () => {
     const prompt = build();
-    expect(at(prompt, "Tool definitions:")).toBeLessThan(at(prompt, "Request req-1:"));
+    expect(at(prompt, PLAN_OPERATIONS_HEADING)).toBeLessThan(at(prompt, "Request req-1:"));
     expect(at(prompt, "Request req-1:")).toBeLessThan(at(prompt, "Private context:"));
   });
   it("splits stable context from the changing request in cache order, losing nothing", () => {
@@ -235,9 +240,9 @@ describe("teacher prompt order", () => {
     expect(stable).toBeDefined();
     expect(stable).toContain("You are the learner's dedicated classroom teacher.");
     expect(stable).not.toContain("req-1");
-    expect(stable).not.toContain("Tool definitions:");
+    expect(stable).not.toContain(PLAN_OPERATIONS_HEADING);
     expect(request.trimEnd().endsWith("Learner asks X")).toBe(true);
-    expect(request).toContain("Tool definitions:");
+    expect(request).toContain(PLAN_OPERATIONS_HEADING);
     const json = (text: string, label: string) =>
       JSON.parse(text.slice(text.indexOf(label) + label.length).split("\n\n")[0]);
     const kept = json(stable!, "Private context (rarely changes):\n");

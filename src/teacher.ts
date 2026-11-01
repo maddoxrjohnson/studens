@@ -15,6 +15,12 @@ import { LESSON_OUTPUT_SCHEMA, lessonModelPlan } from "./lesson-output.ts";
 import { passageAnswerSchema, passageAnswerPlan } from "./passage-answer.ts";
 import { disputeOutputSchema, disputeOutputPlan } from "./dispute-output.ts";
 import type { DisputeOutputTarget } from "./dispute-output.ts";
+import {
+  retrievalOutputPlan,
+  retrievalOutputSchema,
+  returnsRetrievalCheck,
+} from "./retrieval-output.ts";
+import type { RetrievalOutputTarget } from "./retrieval-output.ts";
 
 /** Process-wide discovery precedes per-thread settings; keep apps and plugins off at both boundaries. */
 export const CODEX_TEACHER_DISABLED_FEATURES = [
@@ -105,8 +111,9 @@ export type TeacherOperation = TeacherPlan["calls"][number]["name"];
 export interface PlanContract {
   operations: TeacherOperation[];
   /** Selected by the current request, never inferred from model output or saved plans. */
-  response?: "passage-answer" | "dispute-resolution" | "review-variants";
+  response?: "passage-answer" | "dispute-resolution" | "review-variants" | "retrieval-check";
   passageAnnotationId?: string;
+  retrievalTarget?: RetrievalOutputTarget;
   disputeTarget?: DisputeOutputTarget;
   refillTarget?: RefillOutputTarget;
   required?: boolean;
@@ -118,6 +125,8 @@ export interface PlanContract {
 /** Limit structured output to operations permitted by the current request. */
 export function planSchema(contract: PlanContract) {
   if (contract.response === "review-variants") return refillOutputSchema(contract.refillTarget);
+  if (contract.response === "retrieval-check")
+    return retrievalOutputSchema(contract.retrievalTarget);
   if (contract.response === "dispute-resolution")
     return disputeOutputSchema(contract.disputeTarget);
   if (contract.response === "passage-answer")
@@ -165,7 +174,36 @@ export type RunTeacher = (
   contract: PlanContract,
   saveModelOutput?: (value: unknown) => void,
   saveActiveModel?: (model: string) => void,
+  saveStreamDigest?: (digest: StreamDigest) => void,
 ) => Promise<TeacherPlan>;
+
+/** A small private summary of a Claude stream, saved so a failure can be diagnosed later. */
+export interface StreamDigest {
+  text: Array<{ chars: number; start: string }>;
+  tools: string[];
+  toolErrors: string[];
+  /** Start of the final result text when the CLI reported an error. */
+  resultError?: string;
+}
+/** Plan operations are returned in the structured plan; a native call to one is a failure. */
+export interface StreamGuard {
+  operations: readonly string[];
+  /** Whether the final structured output returned this operation. */
+  returned: (output: unknown, operation: string) => boolean;
+  saveDigest?: (digest: StreamDigest) => void;
+}
+/** Whether raw structured output includes an operation, by this request's response format. */
+export function returnsOperation(contract: PlanContract, output: unknown, operation: string) {
+  if (contract.response === "retrieval-check")
+    return operation === "record_retrieval_check" && returnsRetrievalCheck(output);
+  // Other typed responses always encode their single operation; their decoders validate it.
+  if (contract.response || contract.operations[0] === "publish_lesson") return true;
+  const calls = (output as { calls?: unknown } | null)?.calls;
+  return (
+    Array.isArray(calls) &&
+    calls.some((call) => (call as { name?: unknown } | null)?.name === operation)
+  );
+}
 
 export function parsePlan(value: unknown): TeacherPlan {
   if (!value || typeof value !== "object") throw new Error("Teacher returned no plan.");
@@ -210,6 +248,7 @@ export const runTeacher: RunTeacher = async (
   contract,
   saveModelOutput,
   saveActiveModel,
+  saveStreamDigest,
 ) => {
   const raw = await runStructured(
     identity,
@@ -218,7 +257,7 @@ export const runTeacher: RunTeacher = async (
           "\n\nCurrent response format: typed refill data only: classroom, request_id, variants. Each variant contains id, html, rubric, task. Return direct HTML strings, not calls or arguments_json. The host supplies original objective and independent support and serializes the canonical call. Use null for absent grading. Supply criteria on each rubric. Expected answers use the same typed data as lesson output: direct strings/lists/numeric objects, and {entries:[{key,value}]} only for keyed match/cloze maps."
       : contract.operations.includes("save_review_variants")
         ? prompt +
-          "\n\nCurrent response format: canonical service plan and save_review_variants tool arguments. The earlier explicit-lesson response schema applies only to publish_lesson. Here rubric.expected uses canonical private keys directly: a string option id for choice, id arrays for multi/order/locate, a value/tolerance/unit object for numeric, or keyed objects for match/cloze. Never use lesson-transport wrappers such as kind/value or entries around an expected answer. Follow this request's tool definitions and inline canonical contract."
+          "\n\nCurrent response format: canonical service plan and save_review_variants plan operation arguments. The earlier explicit-lesson response schema applies only to publish_lesson. Here rubric.expected uses canonical private keys directly: a string option id for choice, id arrays for multi/order/locate, a value/tolerance/unit object for numeric, or keyed objects for match/cloze. Never use lesson-transport wrappers such as kind/value or entries around an expected answer. Follow this request's plan operation definitions and inline canonical contract. They are plan fields, not tools to call."
         : prompt,
     cwd,
     saveIdentity,
@@ -227,9 +266,16 @@ export const runTeacher: RunTeacher = async (
     saveActiveModel,
     contract.research,
     saveModelOutput,
+    {
+      operations: contract.operations,
+      returned: (output, operation) => returnsOperation(contract, output, operation),
+      saveDigest: saveStreamDigest,
+    },
   );
   saveModelOutput?.(raw);
   if (contract.response === "review-variants") return refillOutputPlan(raw, contract.refillTarget);
+  if (contract.response === "retrieval-check")
+    return retrievalOutputPlan(raw, contract.retrievalTarget);
   if (contract.response === "passage-answer") return passageAnswerPlan(raw);
   if (contract.response === "dispute-resolution")
     return disputeOutputPlan(raw, contract.disputeTarget);
@@ -249,6 +295,7 @@ export async function runStructured(
   saveActiveModel?: (model: string) => void,
   research = false,
   saveModelOutput?: (value: unknown) => void,
+  guard?: StreamGuard,
 ): Promise<unknown> {
   if (identity.backend !== "claude") prompt = joinPrompt(prompt);
   if (identity.backend === "pi") {
@@ -277,7 +324,58 @@ export async function runStructured(
         false,
         research,
       )
-    : runClaude(identity, prompt, cwd, saveIdentity, schema, signal, saveActiveModel, research);
+    : runClaude(
+        identity,
+        prompt,
+        cwd,
+        saveIdentity,
+        schema,
+        signal,
+        saveActiveModel,
+        research,
+        saveModelOutput,
+        guard,
+      );
+}
+
+/** Events after this run's init, so an earlier turn could never count as a call now. */
+function thisRun(events: any[]): any[] {
+  let start = 0;
+  events.forEach((event, i) => {
+    if (event?.type === "system" && event.subtype === "init") start = i + 1;
+  });
+  return events.slice(start);
+}
+const DIGEST_ITEMS = 12;
+const DIGEST_CHARS = 200;
+/** Summarize assistant text, native tool calls and tool errors without keeping the whole stream. */
+export function claudeStreamDigest(events: any[]): StreamDigest {
+  const digest: StreamDigest = { text: [], tools: [], toolErrors: [] };
+  for (const event of thisRun(events)) {
+    const content = event?.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (event.type === "assistant" && block?.type === "text" && typeof block.text === "string")
+        digest.text.push({ chars: block.text.length, start: block.text.slice(0, DIGEST_CHARS) });
+      if (event.type === "assistant" && block?.type === "tool_use")
+        digest.tools.push(String(block.name).slice(0, DIGEST_CHARS));
+      if (event?.type === "user" && block?.type === "tool_result" && block.is_error) {
+        const body =
+          typeof block.content === "string" ? block.content : JSON.stringify(block.content);
+        digest.toolErrors.push(String(body).slice(0, DIGEST_CHARS));
+      }
+    }
+  }
+  digest.text = digest.text.slice(0, DIGEST_ITEMS);
+  digest.tools = digest.tools.slice(0, DIGEST_ITEMS);
+  digest.toolErrors = digest.toolErrors.slice(0, DIGEST_ITEMS);
+  const result = [...events].reverse().find((event) => event?.type === "result");
+  if (result?.is_error)
+    digest.resultError = String(result.result ?? JSON.stringify(result.errors)).slice(
+      0,
+      DIGEST_CHARS,
+    );
+  return digest;
 }
 
 async function runClaude(
@@ -289,6 +387,8 @@ async function runClaude(
   signal?: AbortSignal,
   saveActiveModel?: (model: string) => void,
   research = false,
+  saveModelOutput?: (value: unknown) => void,
+  guard?: StreamGuard,
 ): Promise<unknown> {
   const catalog = await cachedClaudeModels(cwd);
   const model = identity.requestedModel ?? catalog.configuredModel;
@@ -356,6 +456,18 @@ async function runClaude(
       clearTimeout(timer);
       cleanup();
       try {
+        // Best effort, before any failure: a failed exit still leaves a diagnosable digest.
+        const readable = stdout
+          .trim()
+          .split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          });
+        guard?.saveDigest?.(claudeStreamDigest(readable));
         if (code !== 0) throw new Error(`Claude teacher exited with ${code}: ${stderr}`);
         const events = stdout
           .trim()
@@ -391,6 +503,23 @@ async function runClaude(
             `Claude selected model ${model} resolved to ${models.join(", ")}, expected ${expectedModel}. Choose a model and retry explicitly.`,
           );
         saveActiveModel?.(models.join(", "));
+        // A stray native call is harmless only when the final plan still returned the operation.
+        const called: string[] = thisRun(events)
+          .filter((event) => event.type === "assistant" && Array.isArray(event.message?.content))
+          .flatMap((event) => event.message.content)
+          .filter((block: any) => block?.type === "tool_use")
+          .map((block: any) => String(block.name));
+        const stray = guard?.operations.find(
+          (operation) =>
+            called.some((name) => name === operation || name.endsWith(`__${operation}`)) &&
+            !guard.returned(result.structured_output, operation),
+        );
+        if (stray) {
+          saveModelOutput?.(result.structured_output);
+          throw new Error(
+            `Claude teacher called ${stray} as a tool instead of returning it in the plan. Retry explicitly.`,
+          );
+        }
         resolve(result.structured_output);
       } catch (err) {
         reject(err);

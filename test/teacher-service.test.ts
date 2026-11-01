@@ -16,6 +16,8 @@ import * as store from "../src/store.ts";
 import * as server from "../src/server.ts";
 import { applyGrade } from "../src/bridge.ts";
 import type { TeacherPlan } from "../src/teacher.ts";
+import { PLAN_OPERATIONS_HEADING } from "../src/prompts.ts";
+import { retrievalOutputPlan } from "../src/retrieval-output.ts";
 
 let f: Fixture;
 const location = { classroom: "rust", lesson: "001-ownership" };
@@ -56,7 +58,14 @@ describe("persistent teacher", () => {
     const teacher = new TeacherService(
       async (_identity, prompt, _cwd, _save, _signal, contract) => {
         seen.push(contract.operations);
-        const marker = "Tool definitions:\n";
+        if (contract.response === "retrieval-check") {
+          // The typed response schema is the contract; no operation definitions are sent.
+          expect(prompt).not.toContain(PLAN_OPERATIONS_HEADING);
+          expect(contract.required).not.toBe(true);
+          expect(contract.notesAllowed).toBe(true);
+          return plan([]);
+        }
+        const marker = PLAN_OPERATIONS_HEADING;
         const definitions = JSON.parse(prompt.split(marker)[1].split("\n\nRequest ")[0]);
         expect(definitions.map((tool: { name: string }) => tool.name)).toEqual(contract.operations);
         if (seen.length === 1) {
@@ -320,6 +329,191 @@ it("keeps retrieval records and linked evidence idempotent after a saved-plan re
   expect(store.listLearningRecords("rust")).toEqual(["0001-teacher-check.md"]);
   expect(store.listGrades("rust", location.lesson)).toHaveLength(1);
   expect(readTeacherState("rust")?.requests.find((r) => r.kind === "chat")?.status).toBe("done");
+});
+
+it("saves a typed panel check as a canonical plan before writes and applies it once", async () => {
+  writeGradedAttempt({
+    at: Date.now() - 2 * DAY_MS,
+    answers: [termAnswer("q1", "forever")],
+    correct: { q1: false },
+  });
+  const reply = "The String is dropped when its owner leaves scope.";
+  let runs = 0;
+  const teacher = new TeacherService(async (_identity, _prompt, _cwd, _save, _signal, contract) => {
+    runs++;
+    expect(contract.response).toBe("retrieval-check");
+    expect(contract.retrievalTarget).toEqual({
+      classroom: "rust",
+      answer: reply,
+      reviewKeys: ["001-ownership/check-1/q1"],
+    });
+    return retrievalOutputPlan(
+      {
+        message: "Correct. Are you ready to continue?",
+        notes_markdown: "",
+        retrieval_check: {
+          review_key: "001-ownership/check-1/q1",
+          evidence: "The learner traced the owner to the end of its scope in a new example.",
+          assistance: "unknown",
+          task: "retrieval",
+          learning_record_markdown: "# Owner lifetime\n\nTraced a String to its owner's scope end.",
+        },
+      },
+      contract.retrievalTarget,
+    );
+  });
+  teacher.attach("rust", "codex");
+  // A storage failure before the first write leaves only the saved, validated plan.
+  f.write("rust/learning-records", "not a directory");
+  const id = randomUUID();
+  teacher.chat("rust", location.lesson, reply, id);
+  await teacher.idle();
+  let request = readTeacherState("rust")!.requests.find((r) => r.id === `chat:${id}`)!;
+  expect(request.status).toBe("failed");
+  expect(request.planVersion).toBe(3);
+  expect(request.planValidated).toBe(true);
+  expect(JSON.parse(request.plan!.calls[0].arguments_json)).toMatchObject({
+    classroom: "rust",
+    answer: reply,
+  });
+  expect(store.listRetrievalChecks("rust")).toHaveLength(0);
+  fs.rmSync(path.join(f.root, "rust/learning-records"));
+  teacher.retry("rust", `chat:${id}`);
+  await teacher.idle();
+  expect(runs).toBe(1);
+  expect(readTeacherState("rust")!.requests.find((r) => r.id === `chat:${id}`)!.status).toBe(
+    "done",
+  );
+  const state = readTeacherState("rust")!;
+  request = state.requests.find((r) => r.id === `chat:${id}`)!;
+  request.status = "planned";
+  request.applied = 0;
+  saveTeacherState("rust", state);
+  const restarted = new TeacherService(async () => {
+    throw new Error("Recovery must use the saved plan.");
+  });
+  restarted.restore();
+  await restarted.idle();
+  expect(store.listRetrievalChecks("rust")).toHaveLength(1);
+  expect(store.listLearningRecords("rust")).toEqual(["0001-teacher-check.md"]);
+  expect(readTeacherState("rust")!.requests.find((r) => r.id === `chat:${id}`)!.status).toBe(
+    "done",
+  );
+  await teacher.stop();
+  await restarted.stop();
+});
+
+it("recovers a saved version 2 panel plan with generic calls once", async () => {
+  writeGradedAttempt({
+    at: Date.now() - 2 * DAY_MS,
+    answers: [termAnswer("q1", "forever")],
+    correct: { q1: false },
+  });
+  const reply = "The owner frees it at the end of scope.";
+  const first = new TeacherService(async () => {
+    throw new Error("Stop before a plan for the recovery check.");
+  });
+  first.attach("rust", "codex");
+  const id = randomUUID();
+  first.chat("rust", location.lesson, reply, id);
+  await first.idle();
+  await first.stop();
+  const state = readTeacherState("rust")!;
+  const request = state.requests.find((r) => r.id === `chat:${id}`)!;
+  Object.assign(request, {
+    status: "planned",
+    planVersion: 2,
+    planValidated: false,
+    plan: {
+      calls: [
+        {
+          name: "record_retrieval_check",
+          arguments_json: JSON.stringify({
+            classroom: "rust",
+            review_key: "001-ownership/check-1/q1",
+            answer: reply,
+            evidence: "The learner placed the drop at the end of the owner's scope.",
+          }),
+        },
+      ],
+      message: "Correct.",
+      learning_record: "# Owner scope\n\nPlaced the drop at the owner's scope end.",
+      notes_markdown: "",
+    },
+  });
+  delete request.error;
+  saveTeacherState("rust", state);
+  for (let restart = 0; restart < 2; restart++) {
+    const restored = new TeacherService(async () => {
+      throw new Error("Recovery must use the saved version 2 plan.");
+    });
+    restored.restore();
+    await restored.idle();
+    const saved = readTeacherState("rust")!;
+    const recovered = saved.requests.find((r) => r.id === `chat:${id}`)!;
+    expect(recovered.status).toBe("done");
+    expect(recovered.planVersion).toBe(2);
+    recovered.status = "planned";
+    recovered.applied = 0;
+    saveTeacherState("rust", saved);
+    await restored.stop();
+  }
+  expect(store.listRetrievalChecks("rust")).toHaveLength(1);
+  expect(store.listLearningRecords("rust")).toEqual(["0001-teacher-check.md"]);
+});
+
+it("saves a null-check panel plan as version 2 and rejects extra calls in version 3", async () => {
+  writeGradedAttempt({
+    at: Date.now() - 2 * DAY_MS,
+    answers: [termAnswer("q1", "forever")],
+    correct: { q1: false },
+  });
+  const teacher = new TeacherService(async (_identity, _prompt, _cwd, _save, _signal, contract) =>
+    retrievalOutputPlan(
+      { message: "Not yet. Try a new case.", retrieval_check: null, notes_markdown: "" },
+      contract.retrievalTarget,
+    ),
+  );
+  teacher.attach("rust", "codex");
+  const id = randomUUID();
+  teacher.chat("rust", location.lesson, "I am not sure.", id);
+  await teacher.idle();
+  const state = readTeacherState("rust")!;
+  const request = state.requests.find((r) => r.id === `chat:${id}`)!;
+  expect(request.status).toBe("done");
+  expect(request.planVersion).toBe(2);
+  expect(request.plan!.calls).toEqual([]);
+  // A version 3 plan holds exactly one code-serialized check.
+  const call = {
+    name: "record_retrieval_check",
+    arguments_json: JSON.stringify({
+      classroom: "rust",
+      review_key: "001-ownership/check-1/q1",
+      answer: "I am not sure.",
+      evidence: "Unused.",
+    }),
+  };
+  Object.assign(request, {
+    status: "planned",
+    planVersion: 3,
+    planValidated: false,
+    applied: 0,
+    plan: { ...request.plan!, calls: [call, call], learning_record: "# Record" },
+  });
+  state.messages = state.messages.filter((m) => !(m.id === request.id && m.role === "teacher"));
+  saveTeacherState("rust", state);
+  const restored = new TeacherService(async () => {
+    throw new Error("Recovery must use the saved plan.");
+  });
+  restored.restore();
+  await restored.idle();
+  const rejected = readTeacherState("rust")!.requests.find((r) => r.id === `chat:${id}`)!;
+  expect(rejected.status).toBe("failed");
+  expect(rejected.error).toContain("at most one retrieval check");
+  expect(store.listRetrievalChecks("rust")).toHaveLength(0);
+  expect(store.listLearningRecords("rust")).toHaveLength(0);
+  await teacher.stop();
+  await restored.stop();
 });
 
 it("leaves queued work saved when stopped and recovers it on restart", async () => {
@@ -769,7 +963,7 @@ it("rejects an unknown saved plan version before recovery", async () => {
   teacher.attach("rust", "codex");
   await teacher.idle();
   const state = readTeacherState("rust")!;
-  Object.assign(state.requests[0], { planVersion: 3 });
+  Object.assign(state.requests[0], { planVersion: 4 });
   saveTeacherState("rust", state);
   expect(() => readTeacherState("rust")).toThrow("Invalid teacher state");
   await teacher.stop();

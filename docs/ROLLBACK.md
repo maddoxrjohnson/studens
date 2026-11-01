@@ -53,6 +53,15 @@ blindly reverting the storage/service contracts is not. Removing `rubricCriteria
 from canonical files, flattening criterion grades, or rewriting historical totals
 is not a supported rollback. There is no automatic data downgrade.
 
+## Typed panel reply plans
+
+A panel reply that records a retrieval check saves its request with `planVersion: 3`.
+Published v0.13.3 and older refuse a `.teacher.json` that holds such a request with
+`Invalid teacher state`, and that classroom's teacher does not start. Panel replies
+without a check stay at version 2. Do not hand-edit saved state to pass the check.
+Use the backup procedure above: restore the complete pre-deployment root, or keep
+the newer root on compatible code.
+
 The deployment owner must choose the acceptable state boundary and keep both
 backups. A later release checkpoint does not make an older code/data pair
 compatible with newer durable fields.

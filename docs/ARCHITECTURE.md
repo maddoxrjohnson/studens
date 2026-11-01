@@ -147,6 +147,13 @@ points. See [code exercises](CODE-EXERCISES.md) for the authoring and isolation 
   validates identities, rubric weights, correctness, and arithmetic. Version 2 plans
   use this format. Older saved plans retain their original score validation.
   Resume requests permit a teacher message only. Only chat/reflection allow gap notes.
+  Fresh panel replies return a typed nullable `retrieval_check` that carries its learning
+  record; code adds the classroom and exact saved reply and saves the canonical
+  `record_retrieval_check` call as a version 3 plan; a null check stays version 2.
+  Saved version 2 plans keep their calls. Plan operations are described as plan
+  fields, never as callable tools. A Claude stream that calls one natively without
+  returning it in the plan fails for explicit retry, with a small private stream
+  digest on the failed request.
 - **Pi uses the service FIFO.** Initiating chat turns cannot answer queued browser
   work. The dedicated Pi session returns exactly one structured plan; prose cannot
   substitute for a grading operation. The old bridge remains only in historical

@@ -63,7 +63,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
   const quiz = /submission_id: "([^"]+)"/.exec(m.params.input[0].text);
   const calls = ask ? [{name:'answer_lesson_question',arguments_json:JSON.stringify({annotation_id:ask[1],answer_markdown:'The owner releases the value.'})}] : quiz ? [{name:'grade_quiz_answers',arguments_json:JSON.stringify({submission_id:quiz[1],...(m.params.input[0].text.includes('Previous teacher plan error:') ? {} : {score:10}),feedback_markdown:'Check the owner.',questions:[{question_id:'q1',correct:false,feedback:'Trace the owner.'}]})}] : [];
   send({id:m.id,result:{turn:{id:'browser-turn'}}});
-  send({method:'item/completed',params:{threadId:m.params.threadId,turnId:'browser-turn',item:{type:'agentMessage',text:JSON.stringify(ask ? {annotation_id:ask[1],answer_markdown:JSON.parse(fs.readFileSync(path.join(process.env.PI_CLASSROOMS_DIR,'passage-answer.json'),'utf8'))} : {calls,message:'What changes when the value moves?',learning_record:null,notes_markdown:''})}}});
+  send({method:'item/completed',params:{threadId:m.params.threadId,turnId:'browser-turn',item:{type:'agentMessage',text:JSON.stringify(ask ? {annotation_id:ask[1],answer_markdown:JSON.parse(fs.readFileSync(path.join(process.env.PI_CLASSROOMS_DIR,'passage-answer.json'),'utf8'))} : m.params.outputSchema?.properties?.retrieval_check ? {message:'What changes when the value moves?',retrieval_check:null,notes_markdown:''} : {calls,message:'What changes when the value moves?',learning_record:null,notes_markdown:''})}}});
   send({method:'turn/completed',params:{threadId:m.params.threadId,turn:{id:'browser-turn',status:'completed'}}});
  }
 });

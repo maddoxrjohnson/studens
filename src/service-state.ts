@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { classroomDir, isValidSlug } from "./paths.ts";
 import { modelSelection } from "./teacher-models.ts";
 import type { GradeDispute, DisputeResolution } from "./grade-dispute.ts";
-import type { TeacherIdentity, TeacherPlan } from "./teacher.ts";
+import type { StreamDigest, TeacherIdentity, TeacherPlan } from "./teacher.ts";
 
 export interface TeacherRequest {
   id: string;
@@ -39,12 +39,17 @@ export interface TeacherRequest {
   requestedModel?: string | null;
   resolvedModel?: string;
   originatingIdentity?: TeacherIdentity;
-  /** Version 2 uses score-free grade_quiz_answers. Absent on older saved plans. */
-  planVersion?: 2;
+  /**
+   * Version 2 uses score-free grade_quiz_answers. Version 3 is a panel reply plan whose
+   * retrieval check code serialized from typed output. Absent on older saved plans.
+   */
+  planVersion?: 2 | 3;
   planRubricDigest?: string;
   planValidated?: boolean;
   applied?: number;
   recordFile?: string;
+  /** Private summary of the last Claude stream for this request, for diagnosis. */
+  streamDigest?: StreamDigest;
 }
 export interface TeacherMessage {
   id: string;
@@ -74,7 +79,7 @@ export function readTeacherState(classroom: string): TeacherState | null {
       !["codex", "claude", "pi"].includes(state.identity.backend) ||
       !Array.isArray(state.requests) ||
       state.requests.some(
-        (request) => request.planVersion !== undefined && request.planVersion !== 2,
+        (request) => request.planVersion !== undefined && ![2, 3].includes(request.planVersion),
       ) ||
       !Array.isArray(state.messages)
     )
