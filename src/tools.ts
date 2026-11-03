@@ -46,6 +46,7 @@ import {
 } from "./review.ts";
 import * as server from "./server.ts";
 import * as store from "./store.ts";
+import { ProgressRefreshError, refreshProgressAfterGrade } from "./syllabus.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -470,20 +471,23 @@ export function classroomTools(host: ToolHost): ClassroomTool[] {
               feedback: q.feedback,
             })),
           });
+          // After the saved grade; a failure is a storage error, and the retry skips the grade.
+          refreshProgressAfterGrade(submission.classroom);
         } catch (err) {
           const code = (err as NodeJS.ErrnoException).code;
-          const storageError = [
-            "EACCES",
-            "EPERM",
-            "ENOSPC",
-            "EROFS",
-            "EIO",
-            "ENOENT",
-            "ENOTDIR",
-            "EISDIR",
-            "EMFILE",
-            "ENFILE",
-          ].includes(code ?? "");
+          const storageError =
+            [
+              "EACCES",
+              "EPERM",
+              "ENOSPC",
+              "EROFS",
+              "EIO",
+              "ENOENT",
+              "ENOTDIR",
+              "EISDIR",
+              "EMFILE",
+              "ENFILE",
+            ].includes(code ?? "") || err instanceof ProgressRefreshError;
           return fail((err as Error).message, { storageError });
         }
         const kind = kindOf(submission);

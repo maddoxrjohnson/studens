@@ -11,6 +11,8 @@ export interface LessonDocument {
   lesson_html: string;
   rubric_json: string;
   teaching_plan_json: string;
+  /** Target-exam topic ids taught; null without syllabus topics. Absent in 0.13.4 plans. */
+  syllabus_skills?: string[] | null;
 }
 export interface LessonRequest {
   id: string;
@@ -28,6 +30,8 @@ export interface LessonRequest {
   document?: LessonDocument;
   pageCheck?: { hash: string; report: string };
   pageCheckFailed?: boolean;
+  /** The saved plan's syllabus_skills no longer match syllabus.json; retry needs a new plan. */
+  syllabusCheckFailed?: boolean;
   pageCheckFailures?: Array<{ error: string; stdout: string; stderr: string }>;
   modelOutput?: unknown;
   rejectedDocuments?: LessonDocument[];

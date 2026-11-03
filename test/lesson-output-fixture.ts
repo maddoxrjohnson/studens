@@ -55,6 +55,7 @@ export function lessonOutput(document: LessonDocument) {
         })),
       ),
     ),
+    syllabus_skills: document.syllabus_skills ?? null,
   };
 }
 
@@ -97,4 +98,5 @@ export const simpleLessonOutput = {
     },
   ],
   variants: [],
+  syllabus_skills: null,
 };

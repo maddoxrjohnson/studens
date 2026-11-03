@@ -5,22 +5,24 @@ import { reteachOffers } from "./reteach.ts";
 import { renderMarkdown } from "./markdown.ts";
 import * as server from "./server.ts";
 import * as store from "./store.ts";
+import { refreshProgressInBackground } from "./syllabus.ts";
 
 /** Finish a saved closed submission without a model turn or a second grade revision. */
 export function completeClosedSubmission(submission: store.QuizSubmission): boolean {
   const questions = submission.deterministicGrades;
   if (!questions?.length || questions.length !== submission.answers.length) return false;
-  if (
-    !store
-      .latestGrades(submission.classroom, submission.lesson)
-      .some((g) => g.submissionId === submission.id)
-  )
+  const graded = !store
+    .latestGrades(submission.classroom, submission.lesson)
+    .some((g) => g.submissionId === submission.id);
+  if (graded)
     applyGrade(submission, {
       score: gradeScore(questions),
       feedbackMarkdown: "Graded against the private answer key.",
       questions,
     });
   if (questions.some((question) => !question.correct)) server.reviewMiss(submission);
+  // Only after a new grade, and last: a refresh failure is logged, never the learner's error.
+  if (graded) refreshProgressInBackground(submission.classroom);
   return true;
 }
 

@@ -65,3 +65,14 @@ the newer root on compatible code.
 The deployment owner must choose the acceptable state boundary and keep both
 backups. A later release checkpoint does not make an older code/data pair
 compatible with newer durable fields.
+
+## Syllabus progress
+
+Rolling back to 0.13.4 ignores the `plan` key in `syllabus.json`; the generated
+`studens:progress` block stays in the plan file as plain markdown, and lessons
+already added to topic `lessons` arrays stay listed. Every Next lesson plan saved by
+0.13.5 carries `syllabus_skills`, even when it is null, and 0.13.4 rejects that key
+with its specific lesson output error. Before rolling back, finish every unfinished
+Next lesson request in every classroom on 0.13.5. An explicit retry on 0.13.4 does
+not clear that saved plan (it drops a saved plan only after a failed page check), so
+such a request stays failed on 0.13.4 until it is finished on 0.13.5.

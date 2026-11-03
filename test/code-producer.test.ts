@@ -37,6 +37,7 @@ it("preserves code HTML, public tests, judgment criteria and private variants th
     lesson_html: document.lesson_html,
     rubric: JSON.parse(document.rubric_json),
     teaching_plan: JSON.parse(document.teaching_plan_json),
+    syllabus_skills: null,
   });
   expect(pi).toEqual(document);
   expect(document.lesson_html).toBe(typed.lesson_html);

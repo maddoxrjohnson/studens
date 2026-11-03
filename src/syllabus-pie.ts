@@ -12,52 +12,24 @@ import { escapeHtml } from "./markdown.ts";
 import { classroomDir } from "./paths.ts";
 import type { ReviewItem } from "./review.ts";
 import type { Lesson } from "./store.ts";
-
-/** Box 3 is the 21-day interval in the 1, 3, 7, 21, 60 day ladder. */
-const MASTERED_BOX = 3;
-
-interface Topic {
-  name: string;
-  lessons?: string[];
-}
-interface Exam {
-  name?: string;
-  domains?: { weight?: number; topics?: Topic[] }[];
-}
-
-function targetExam(classroom: string): Exam | undefined {
-  try {
-    const syllabus = JSON.parse(
-      fs.readFileSync(path.join(classroomDir(classroom), "syllabus.json"), "utf8"),
-    );
-    const exams: Exam[] = Array.isArray(syllabus.exams) ? syllabus.exams : [];
-    return exams.find((exam) => exam.name === syllabus.target) ?? exams[exams.length - 1];
-  } catch {
-    return undefined;
-  }
-}
+import { examCoverage, targetExam } from "./syllabus.ts";
 
 export function syllabusPie(classroom: string, lessons: Lesson[], items: ReviewItem[]): string {
-  const exam = targetExam(classroom);
-  const domains = (exam?.domains ?? []).filter((d) => d.topics?.length);
-  if (!domains.length) return "";
-  const taught = new Set(lessons.filter((l) => l.latestScore !== null).map((l) => l.name));
+  let exam, topics;
+  try {
+    exam = targetExam(
+      JSON.parse(fs.readFileSync(path.join(classroomDir(classroom), "syllabus.json"), "utf8")),
+    );
+    topics = examCoverage(exam, lessons, items);
+  } catch {
+    return "";
+  }
+  if (!topics.length) return "";
   const totals = { mastered: 0, seen: 0, unseen: 0 };
   const counts = { mastered: 0, seen: 0, unseen: 0 };
-  const weightSum = domains.reduce((sum, d) => sum + (d.weight ?? 1), 0);
-  for (const domain of domains) {
-    const share = (domain.weight ?? 1) / weightSum / domain.topics!.length;
-    for (const topic of domain.topics!) {
-      const names = (topic.lessons ?? []).filter((name) => taught.has(name));
-      const own = items.filter((i) => i.retiredAt === undefined && names.includes(i.lesson));
-      const state = !names.length
-        ? "unseen"
-        : own.length && own.every((i) => i.box >= MASTERED_BOX)
-          ? "mastered"
-          : "seen";
-      totals[state] += share;
-      counts[state]++;
-    }
+  for (const topic of topics) {
+    totals[topic.state] += topic.share;
+    counts[topic.state]++;
   }
   const topicCount = counts.mastered + counts.seen + counts.unseen;
   const parts = [

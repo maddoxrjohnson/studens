@@ -142,6 +142,14 @@ points. See [code exercises](CODE-EXERCISES.md) for the authoring and isolation 
   Save raw model output before decoding. Recovery completes saved calls and skips
   already saved grades. Interrupted calls show specific errors and require retry.
   Storage failures retain validated plans; rejected allocations require a new plan.
+- **Syllabus progress is derived, opt-in state.** A Next lesson plan carries typed
+  `syllabus_skills` (target-exam topic ids, or null without `syllabus.json` topics),
+  validated against the classroom before the plan is saved and again before
+  publication writes. Publication adds the lesson to those topics' `lessons` in
+  `syllabus.json`. When `syllabus.json` names a `plan` markdown file, the service
+  regenerates its `studens:progress` block from disk after publication, after each
+  saved or skipped grade, and before each Next lesson prompt. Both writes are
+  idempotent, atomic, and skipped when unchanged; text outside the block is kept.
 - **Plans are restricted by request type.** Service teachers return per-question
   allocations through `grade_quiz_answers`; the service computes the score and
   validates identities, rubric weights, correctness, and arithmetic. Version 2 plans

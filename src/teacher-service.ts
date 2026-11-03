@@ -50,6 +50,7 @@ import { applyTurnAnswer, withHtml } from "./bridge.ts";
 import { classroomDir, lessonDir, safeStaticFile, isStoredReview } from "./paths.ts";
 import { stageLesson } from "./pretest.ts";
 import { applyGrade, completeClosedSubmission } from "./quiz-grading.ts";
+import { refreshProgressAfterGrade } from "./syllabus.ts";
 import { validateGrade } from "../assets/runtime/grade.mjs";
 import { answerGradingTool, GRADE_ANSWERS, scoredAnswers } from "./teacher-grading.ts";
 import {
@@ -473,14 +474,16 @@ export class TeacherService {
     requireLessonOwner(request, state.identity.backend);
     if (request.owner === "pi" && request.delivery !== "service")
       throw new Error("This legacy Pi lesson request must finish in its previous Pi package.");
-    this.enqueue({
-      id: `lesson:${request.id}`,
-      classroom: request.classroom,
-      lesson: request.lesson,
-      kind: "lesson",
-      target: request.id,
-      prompt: nextLessonPrompt(request, "service"),
-    });
+    // Build the prompt (and refresh the progress block) only for a newly queued request.
+    if (!state.requests.some((r) => r.id === `lesson:${request.id}`))
+      this.enqueue({
+        id: `lesson:${request.id}`,
+        classroom: request.classroom,
+        lesson: request.lesson,
+        kind: "lesson",
+        target: request.id,
+        prompt: nextLessonPrompt(request, "service"),
+      });
     if (request.status === "failed") {
       const mirror = state.requests.find((r) => r.id === `lesson:${request.id}`)!;
       mirror.status = "failed";
@@ -529,7 +532,12 @@ export class TeacherService {
         request.owner === this.states.get(classroom)!.identity.backend &&
         request.status !== "done"
       )
-        this.nextLesson(request);
+        try {
+          this.nextLesson(request);
+        } catch (error) {
+          // A lesson prompt that cannot be built fails only that request; recovery continues.
+          updateLessonRequest(request, { status: "failed", error: (error as Error).message });
+        }
     for (const session of reviewSessions(classroom)) {
       if (session.owner !== "service" || session.status === "done") continue;
       this.review(session);
@@ -707,7 +715,7 @@ export class TeacherService {
       // Preserve it in the authoring attempt before an explicit retry replaces it.
       if (request.modelOutput === undefined && r.modelOutput !== undefined)
         request = updateLessonRequest(request, { modelOutput: r.modelOutput });
-      const failedPage = request.pageCheckFailed;
+      const failedPage = request.pageCheckFailed || request.syllabusCheckFailed;
       prepareLessonRetry(request);
       if (failedPage) {
         delete r.plan;
@@ -722,6 +730,18 @@ export class TeacherService {
       !(r.applied ?? 0)
     )
       delete r.plan;
+    if (!r.plan && r.kind === "lesson") {
+      // Build the prompt (it refreshes the progress block) before anything is requeued.
+      try {
+        r.prompt = nextLessonPrompt({ ...this.lessonRequest(r), error: r.error }, "service");
+      } catch (error) {
+        r.error = (error as Error).message;
+        updateLessonRequest(this.lessonRequest(r), { status: "failed", error: r.error });
+        saveTeacherState(classroom, state);
+        this.publish(classroom, r.lesson);
+        throw error;
+      }
+    }
     if (r.kind === "lesson") {
       const request = this.lessonRequest(r);
       if (request.document) {
@@ -729,8 +749,6 @@ export class TeacherService {
       }
       updateLessonRequest(request, { status: "queued", error: undefined });
     }
-    if (!r.plan && r.kind === "lesson")
-      r.prompt = nextLessonPrompt({ ...this.lessonRequest(r), error: r.error }, "service");
     if (!r.plan && r.error)
       r.prompt += `\n\nPrevious teacher plan error: ${r.error}\nCorrect it in the new plan.`;
     const refill = r.kind === "refill" ? refreshRefill(this.refillRequest(r)) : null;
@@ -1227,6 +1245,7 @@ export class TeacherService {
           disputeId: r.id,
           revisesGradedAt: r.dispute.gradedAt,
         });
+      if (result.questions) refreshProgressAfterGrade(r.classroom);
       r.disputeDecision = result.resolution.decision;
       r.applied = 1;
       if (!state.messages.some((m) => m.id === r.id && m.role === "teacher"))
@@ -1446,7 +1465,7 @@ export class TeacherService {
             if (result.details.storageError !== true) r.planValidated = false;
             throw new Error(result.content[0].text);
           }
-        }
+        } else refreshProgressAfterGrade(r.classroom);
       } else {
         const dir = path.join(classroomDir(r.classroom), "learning-records");
         fs.mkdirSync(dir, { recursive: true });

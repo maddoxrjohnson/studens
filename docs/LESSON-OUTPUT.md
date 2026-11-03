@@ -28,6 +28,11 @@ Gates require balanced HTML. Close all containers opened inside a template befor
 check as siblings where appropriate. Do not rely on the browser to repair tags.
 The host validates both hidden source and released content, then checks the page.
 
+`syllabus_skills` lists the ids of the `syllabusCoverage` topics the lesson teaches,
+or `[]` when none apply. Use `null` only when the classroom resources have no
+`syllabusCoverage`. Unknown ids are rejected before anything is saved; on
+publication the host adds the lesson to those topics in `syllabus.json`.
+
 ```json
 {
   "title": "Comparing drying conditions",
@@ -163,6 +168,7 @@ The host validates both hidden source and released content, then checks the page
       },
       "task": "application"
     }
-  ]
+  ],
+  "syllabus_skills": null
 }
 ```

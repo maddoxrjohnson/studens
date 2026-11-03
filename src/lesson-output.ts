@@ -114,6 +114,11 @@ export const LESSON_OUTPUT_SCHEMA = object({
     description:
       "Flat private review pool. Emit each variant exactly once as a complete {quiz, question, id, html, rubric, task} object. Combine the private key's HTML/rubric and the private plan's task in that same row; do not emit separate key rows, plan rows, strings or task labels. Use two or three unique variant ids per check question. The host derives objective: original and support: independent and writes both private files. Use [] when no check needs a pool.",
   },
+  syllabus_skills: {
+    ...nullable(array(text)),
+    description:
+      "Ids of the syllabusCoverage topics this lesson teaches ([] when none apply). Null when the classroom has no syllabus topics.",
+  },
 });
 function shape(value: unknown, keys: string[], label: string): Record<string, unknown> {
   if (
@@ -239,7 +244,16 @@ function rubric(value: unknown) {
 export function lessonModelPlan(value: unknown): TeacherPlan {
   const output = shape(
     value,
-    ["title", "summary", "lesson_html", "message", "objectives", "quizzes", "variants"],
+    [
+      "title",
+      "summary",
+      "lesson_html",
+      "message",
+      "objectives",
+      "quizzes",
+      "variants",
+      "syllabus_skills",
+    ],
     "Lesson response",
   );
   const objectives = pairs(output.objectives, "Objectives", (raw) => {
@@ -336,6 +350,10 @@ export function lessonModelPlan(value: unknown): TeacherPlan {
     lesson_html: string(output.lesson_html, "Lesson HTML"),
     rubric_json: JSON.stringify(keys),
     teaching_plan_json: JSON.stringify({ version: 1, objectives, quizzes }),
+    syllabus_skills:
+      output.syllabus_skills === null
+        ? null
+        : rows(output.syllabus_skills, "Syllabus skills").map((id) => string(id, "Syllabus skill")),
   };
   return {
     calls: [{ name: "publish_lesson", arguments_json: JSON.stringify(document) }],

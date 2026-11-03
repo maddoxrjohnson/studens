@@ -57,6 +57,7 @@ export function nextLessonDocument(root: string): LessonDocument {
     ),
     rubric_json: JSON.stringify(rubric),
     teaching_plan_json: JSON.stringify(plan),
+    syllabus_skills: null,
   };
 }
 

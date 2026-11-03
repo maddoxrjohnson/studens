@@ -164,7 +164,7 @@ it("uses the dedicated supported schema only for explicit lesson requests", () =
   );
   expect(planSchema({ operations: ["answer_lesson_question"] })).toHaveProperty("properties.calls");
   expect(LESSON_OUTPUT_SCHEMA.additionalProperties).toBe(false);
-  expect(LESSON_OUTPUT_SCHEMA.required).toHaveLength(7);
+  expect(LESSON_OUTPUT_SCHEMA.required).toHaveLength(8);
   function inspect(schema: any, depth = 0): number {
     const next = depth + (schema.type === "object" || schema.type === "array" ? 1 : 0);
     if (schema.type === "object") {
