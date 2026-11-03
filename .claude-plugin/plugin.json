@@ -1,6 +1,6 @@
 {
   "name": "studens",
-  "version": "0.13.4",
+  "version": "0.13.5",
   "displayName": "Studens",
   "description": "A teacher you can interrupt: interactive HTML lessons in a local web UI, with highlight-to-ask questions and graded quizzes.",
   "author": {
